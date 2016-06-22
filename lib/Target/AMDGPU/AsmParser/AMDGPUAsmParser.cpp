@@ -60,8 +60,6 @@ class AMDGPUOperand : public MCParsedAsmOperand {
 public:
   AMDGPUOperand(enum KindTy K) : MCParsedAsmOperand(), Kind(K) {}
 
-  MCContext *Ctx;
-
   typedef std::unique_ptr<AMDGPUOperand> Ptr;
 
   struct Modifiers {
@@ -160,7 +158,17 @@ public:
   };
 
   bool isToken() const override {
-    return Kind == Token;
+    if (Kind == Token)
+      return true;
+
+    if (Kind != Expression || !Expr)
+      return false;
+
+    // When parsing operands, we can't always tell if something was meant to be
+    // a token, like 'gds', or an expression that references a global variable.
+    // In this case, we assume the string is an expression, and if we need to
+    // interpret is a token, then we treat the symbol name as the token.
+    return isa<MCSymbolRefExpr>(Expr);
   }
 
   bool isImm() const override {
@@ -248,7 +256,7 @@ public:
   }
 
   bool isSSrc32() const {
-    return isImm() || isSCSrc32();
+    return isImm() || isSCSrc32() || isExpr();
   }
 
   bool isSSrc64() const {
@@ -293,12 +301,23 @@ public:
   bool isSWaitCnt() const;
   bool isHwreg() const;
   bool isSendMsg() const;
-  bool isMubufOffset() const;
   bool isSMRDOffset() const;
   bool isSMRDLiteralOffset() const;
   bool isDPPCtrl() const;
 
+  StringRef getExpressionAsToken() const {
+    assert(isExpr());
+    const MCSymbolRefExpr *S = cast<MCSymbolRefExpr>(Expr);
+    return S->getSymbol().getName();
+  }
+
+
   StringRef getToken() const {
+    assert(isToken());
+
+    if (Kind == Expression)
+      return getExpressionAsToken();
+
     return StringRef(Tok.Data, Tok.Length);
   }
 
@@ -376,6 +395,8 @@ public:
   void addRegOrImmOperands(MCInst &Inst, unsigned N) const {
     if (isRegKind())
       addRegOperands(Inst, N);
+    else if (isExpr())
+      Inst.addOperand(MCOperand::createExpr(Expr));
     else
       addImmOperands(Inst, N);
   }
@@ -586,6 +607,21 @@ public:
     }
 
     setAvailableFeatures(ComputeAvailableFeatures(getSTI().getFeatureBits()));
+
+    {
+      // TODO: make those pre-defined variables read-only.
+      // Currently there is none suitable machinery in the core llvm-mc for this.
+      // MCSymbol::isRedefinable is intended for another purpose, and
+      // AsmParser::parseDirectiveSet() cannot be specialized for specific target.
+      AMDGPU::IsaVersion Isa = AMDGPU::getIsaVersion(getSTI().getFeatureBits());
+      MCContext &Ctx = getContext();
+      MCSymbol *Sym = Ctx.getOrCreateSymbol(Twine(".option.machine_version_major"));
+      Sym->setVariableValue(MCConstantExpr::create(Isa.Major, Ctx));
+      Sym = Ctx.getOrCreateSymbol(Twine(".option.machine_version_minor"));
+      Sym->setVariableValue(MCConstantExpr::create(Isa.Minor, Ctx));
+      Sym = Ctx.getOrCreateSymbol(Twine(".option.machine_version_stepping"));
+      Sym->setVariableValue(MCConstantExpr::create(Isa.Stepping, Ctx));
+    }
   }
 
   AMDGPUTargetStreamer &getTargetStreamer() {
@@ -652,12 +688,10 @@ public:
 
   OperandMatchResultTy parseSendMsgOp(OperandVector &Operands);
   OperandMatchResultTy parseSOppBrTarget(OperandVector &Operands);
-  AMDGPUOperand::Ptr defaultHwreg() const;
 
   void cvtMubuf(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, false, false); }
   void cvtMubufAtomic(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, true, false); }
   void cvtMubufAtomicReturn(MCInst &Inst, const OperandVector &Operands) { cvtMubufImpl(Inst, Operands, true, true); }
-  AMDGPUOperand::Ptr defaultMubufOffset() const;
   AMDGPUOperand::Ptr defaultGLC() const;
   AMDGPUOperand::Ptr defaultSLC() const;
   AMDGPUOperand::Ptr defaultTFE() const;
@@ -669,9 +703,6 @@ public:
   AMDGPUOperand::Ptr defaultLWE() const;
   AMDGPUOperand::Ptr defaultSMRDOffset() const;
   AMDGPUOperand::Ptr defaultSMRDLiteralOffset() const;
-
-  AMDGPUOperand::Ptr defaultClampSI() const;
-  AMDGPUOperand::Ptr defaultOModSI() const;
 
   OperandMatchResultTy parseOModOperand(OperandVector &Operands);
 
@@ -691,11 +722,6 @@ public:
   OperandMatchResultTy parseSDWASel(OperandVector &Operands, StringRef Prefix,
                                     AMDGPUOperand::ImmTy Type);
   OperandMatchResultTy parseSDWADstUnused(OperandVector &Operands);
-  AMDGPUOperand::Ptr defaultSDWASel(AMDGPUOperand::ImmTy Type) const;
-  AMDGPUOperand::Ptr defaultSDWADstSel() const;
-  AMDGPUOperand::Ptr defaultSDWASrc0Sel() const;
-  AMDGPUOperand::Ptr defaultSDWASrc1Sel() const;
-  AMDGPUOperand::Ptr defaultSDWADstUnused() const;
   void cvtSdwaVOP1(MCInst &Inst, const OperandVector &Operands);
   void cvtSdwaVOP2(MCInst &Inst, const OperandVector &Operands);
   void cvtSDWA(MCInst &Inst, const OperandVector &Operands, bool IsVOP1);
@@ -1435,7 +1461,19 @@ AMDGPUAsmParser::parseOperand(OperandVector &Operands, StringRef Mnemonic) {
     return ResTy;
 
   if (getLexer().getKind() == AsmToken::Identifier) {
+    // If this identifier is a symbol, we want to create an expression for it.
+    // It is a little difficult to distinguish between a symbol name, and
+    // an instruction flag like 'gds'.  In order to do this, we parse
+    // all tokens as expressions and then treate the symbol name as the token
+    // string when we want to interpret the operand as a token.
     const auto &Tok = Parser.getTok();
+    SMLoc S = Tok.getLoc();
+    const MCExpr *Expr = nullptr;
+    if (!Parser.parseExpression(Expr)) {
+      Operands.push_back(AMDGPUOperand::CreateExpr(Expr, S));
+      return MatchOperand_Success;
+    }
+
     Operands.push_back(AMDGPUOperand::CreateToken(Tok.getString(), Tok.getLoc()));
     Parser.Lex();
     return MatchOperand_Success;
@@ -1869,10 +1907,6 @@ bool AMDGPUOperand::isHwreg() const {
   return isImmTy(ImmTyHwreg);
 }
 
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultHwreg() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyHwreg);
-}
-
 bool AMDGPUAsmParser::parseSendMsgConstruct(OperandInfoTy &Msg, OperandInfoTy &Operation, int64_t &StreamId) {
   using namespace llvm::AMDGPU::SendMsg;
 
@@ -2082,14 +2116,6 @@ AMDGPUAsmParser::parseSOppBrTarget(OperandVector &Operands) {
 //===----------------------------------------------------------------------===//
 // mubuf
 //===----------------------------------------------------------------------===//
-
-bool AMDGPUOperand::isMubufOffset() const {
-  return isImmTy(ImmTyOffset) && isUInt<12>(getImm());
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultMubufOffset() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyOffset);
-}
 
 AMDGPUOperand::Ptr AMDGPUAsmParser::defaultGLC() const {
   return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyGLC);
@@ -2366,14 +2392,6 @@ AMDGPUAsmParser::OperandMatchResultTy AMDGPUAsmParser::parseOModOperand(OperandV
   } else {
     return MatchOperand_NoMatch;
   }
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultClampSI() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTyClampSI);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultOModSI() const {
-  return AMDGPUOperand::CreateImm(1, SMLoc(), AMDGPUOperand::ImmTyOModSI);
 }
 
 void AMDGPUAsmParser::cvtId(MCInst &Inst, const OperandVector &Operands) {
@@ -2661,26 +2679,6 @@ AMDGPUAsmParser::parseSDWADstUnused(OperandVector &Operands) {
   return MatchOperand_Success;
 }
 
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASel(AMDGPUOperand::ImmTy Type) const {
-  return AMDGPUOperand::CreateImm(6, SMLoc(), Type);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWADstSel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaDstSel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASrc0Sel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaSrc0Sel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWASrc1Sel() const {
-  return defaultSDWASel(AMDGPUOperand::ImmTySdwaSrc1Sel);
-}
-
-AMDGPUOperand::Ptr AMDGPUAsmParser::defaultSDWADstUnused() const {
-  return AMDGPUOperand::CreateImm(0, SMLoc(), AMDGPUOperand::ImmTySdwaDstUnused);
-}
-
 void AMDGPUAsmParser::cvtSdwaVOP1(MCInst &Inst, const OperandVector &Operands) {
   cvtSDWA(Inst, Operands, true);
 }
@@ -2761,6 +2759,14 @@ unsigned AMDGPUAsmParser::validateTargetOperandClass(MCParsedAsmOperand &Op,
     return Operand.isIdxen() ? Match_Success : Match_InvalidOperand;
   case MCK_offen:
     return Operand.isOffen() ? Match_Success : Match_InvalidOperand;
+  case MCK_SSrc32:
+    // When operands have expression values, they will return true for isToken,
+    // because it is not possible to distinguish between a token and an
+    // expression at parse time. MatchInstructionImpl() will always try to
+    // match an operand as a token, when isToken returns true, and when the
+    // name of the expression is not a valid token, the match will fail,
+    // so we need to handle it here.
+    return Operand.isSSrc32() ? Match_Success : Match_InvalidOperand;
   default: return Match_InvalidOperand;
   }
 }

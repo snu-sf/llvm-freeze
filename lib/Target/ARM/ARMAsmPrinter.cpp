@@ -212,8 +212,6 @@ void ARMAsmPrinter::printOperand(const MachineInstr *MI, int OpNum,
     GetARMGVSymbol(GV, TF)->print(O, MAI);
 
     printOffset(MO.getOffset(), O);
-    if (TF == ARMII::MO_PLT)
-      O << "(PLT)";
     break;
   }
   case MachineOperand::MO_ConstantPoolIndex:
@@ -615,6 +613,10 @@ static ARMBuildAttrs::CPUArch getArchForCPU(StringRef CPU,
     return ARMBuildAttrs::v4;
 }
 
+bool ARMAsmPrinter::isPositionIndependent() const {
+  return TM.getRelocationModel() == Reloc::PIC_;
+}
+
 void ARMAsmPrinter::emitAttributes() {
   MCTargetStreamer &TS = *OutStreamer->getTargetStreamer();
   ARMTargetStreamer &ATS = static_cast<ARMTargetStreamer &>(TS);
@@ -726,7 +728,7 @@ void ARMAsmPrinter::emitAttributes() {
       ATS.emitFPU(ARM::FK_VFPV2);
   }
 
-  if (TM.getRelocationModel() == Reloc::PIC_) {
+  if (isPositionIndependent()) {
     // PIC specific attributes.
     ATS.emitAttribute(ARMBuildAttrs::ABI_PCS_RW_data,
                       ARMBuildAttrs::AddressRWPCRel);
@@ -1038,7 +1040,7 @@ void ARMAsmPrinter::EmitJumpTableAddrs(const MachineInstr *MI) {
     //    .word (LBB1 - LJTI_0_0)
     const MCExpr *Expr = MCSymbolRefExpr::create(MBB->getSymbol(), OutContext);
 
-    if (TM.getRelocationModel() == Reloc::PIC_)
+    if (isPositionIndependent())
       Expr = MCBinaryExpr::createSub(Expr, MCSymbolRefExpr::create(JTISymbol,
                                                                    OutContext),
                                      OutContext);

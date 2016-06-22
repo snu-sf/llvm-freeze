@@ -1647,6 +1647,8 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
   else
     setMaxAtomicSizeInBitsSupported(0);
 
+  setMinCmpXchgSizeInBits(32);
+
   setOperationAction(ISD::ATOMIC_SWAP, MVT::i32, Legal);
 
   setOperationAction(ISD::ATOMIC_FENCE, MVT::Other, Legal);
@@ -1820,6 +1822,19 @@ SparcTargetLowering::SparcTargetLowering(const TargetMachine &TM,
       setLibcallName(RTLIB::FPROUND_F128_F32, "_Q_qtos");
       setLibcallName(RTLIB::FPROUND_F128_F64, "_Q_qtod");
     }
+  }
+
+  if (Subtarget->fixAllFDIVSQRT()) {
+    // Promote FDIVS and FSQRTS to FDIVD and FSQRTD instructions instead as
+    // the former instructions generate errata on LEON processors.
+    setOperationAction(ISD::FDIV, MVT::f32, Promote);
+    setOperationAction(ISD::FSQRT, MVT::f32, Promote);
+  }
+
+  if (Subtarget->replaceFMULS()) {
+    // Promote FMULS to FMULD instructions instead as
+    // the former instructions generate errata on LEON processors.
+    setOperationAction(ISD::FMUL, MVT::f32, Promote);
   }
 
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);

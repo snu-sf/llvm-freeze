@@ -310,6 +310,11 @@ namespace llvm {
       // Vector shift elements
       VSHL, VSRL, VSRA,
 
+      // Vector variable shift right arithmetic.
+      // Unlike ISD::SRA, in case shift count greater then element size
+      // use sign bit to fill destination data element.
+      VSRAV,
+
       // Vector shift elements by immediate
       VSHLI, VSRLI, VSRAI,
 
@@ -653,6 +658,7 @@ namespace llvm {
   //  X86 Implementation of the TargetLowering interface
   class X86TargetLowering final : public TargetLowering {
   public:
+    bool isPositionIndependent() const;
     explicit X86TargetLowering(const X86TargetMachine &TM,
                                const X86Subtarget &STI);
 

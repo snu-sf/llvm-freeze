@@ -88,6 +88,8 @@ class JIC64_DESC : JMP_IDX_COMPACT_DESC_BASE<"jic", jmpoffset16, GPR64Opnd> {
   list<Register> Defs = [AT];
 }
 
+class LL64_R6_DESC : LL_R6_DESC_BASE<"ll", GPR32Opnd, II_LL>;
+class SC64_R6_DESC : SC_R6_DESC_BASE<"sc", GPR32Opnd, II_SC>;
 //===----------------------------------------------------------------------===//
 //
 // Instruction Definitions
@@ -101,9 +103,9 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def DALIGN : DALIGN_ENC, DALIGN_DESC, ISA_MIPS64R6;
 }
 def DBITSWAP : DBITSWAP_ENC, DBITSWAP_DESC, ISA_MIPS64R6;
-def DCLO_R6 : DCLO_R6_ENC, DCLO_R6_DESC, ISA_MIPS64R6;
-def DCLZ_R6 : DCLZ_R6_ENC, DCLZ_R6_DESC, ISA_MIPS64R6;
 let AdditionalPredicates = [NotInMicroMips] in {
+  def DCLO_R6 : R6MMR6Rel, DCLO_R6_ENC, DCLO_R6_DESC, ISA_MIPS64R6;
+  def DCLZ_R6 : R6MMR6Rel, DCLZ_R6_ENC, DCLZ_R6_DESC, ISA_MIPS64R6;
   def DDIV : DDIV_ENC, DDIV_DESC, ISA_MIPS64R6;
   def DDIVU : DDIVU_ENC, DDIVU_DESC, ISA_MIPS64R6;
   def DMOD : DMOD_ENC, DMOD_DESC, ISA_MIPS64R6;
@@ -122,6 +124,11 @@ def SCD_R6 : SCD_R6_ENC, SCD_R6_DESC, ISA_MIPS32R6;
 let DecoderNamespace = "Mips32r6_64r6_GP64" in {
   def SELEQZ64 : SELEQZ_ENC, SELEQZ64_DESC, ISA_MIPS32R6, GPR_64;
   def SELNEZ64 : SELNEZ_ENC, SELNEZ64_DESC, ISA_MIPS32R6, GPR_64;
+}
+let AdditionalPredicates = [NotInMicroMips],
+    DecoderNamespace = "Mips32r6_64r6_PTR64" in {
+  def LL64_R6 : LL_R6_ENC, LL64_R6_DESC, PTR_64, ISA_MIPS64R6;
+  def SC64_R6 : SC_R6_ENC, SC64_R6_DESC, PTR_64, ISA_MIPS64R6;
 }
 let isCodeGenOnly = 1 in {
 def JIALC64 : JIALC_ENC, JIALC64_DESC, ISA_MIPS64R6;
