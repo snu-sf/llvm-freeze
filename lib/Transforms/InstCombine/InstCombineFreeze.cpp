@@ -20,7 +20,7 @@ using namespace PatternMatch;
 Instruction *InstCombiner::visitFreeze(FreezeInst &FI) {
   Value *Op0 = FI.getOperand(0);
   if (FreezeInst *Op0_FI = dyn_cast<FreezeInst>(Op0))
-    return Op0_FI;
+    return replaceInstUsesWith(FI, Op0_FI);
 
   return nullptr;
 }
