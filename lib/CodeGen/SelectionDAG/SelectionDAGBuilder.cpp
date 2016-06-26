@@ -9356,5 +9356,6 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
 }
 
 void SelectionDAGBuilder::visitFreeze(const FreezeInst &I) {
-  assert(false && "SelectionDAGBuilder::visitFreeze Not Implemented");
+  SDValue N = getValue(I.getOperand(0));
+  setValue(&I, N);
 }
