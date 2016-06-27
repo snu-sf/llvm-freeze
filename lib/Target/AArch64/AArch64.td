@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Target-independent interfaces which we are implementing
+// Target-independent interfaces which we are implementing.
 //===----------------------------------------------------------------------===//
 
 include "llvm/Target/Target.td"
@@ -176,6 +176,24 @@ def ProcA57     : SubtargetFeature<"a57", "ARMProcFamily", "CortexA57",
                                    FeaturePredictableSelectIsExpensive
                                    ]>;
 
+def ProcA72     : SubtargetFeature<"a72", "ARMProcFamily", "CortexA72",
+                                   "Cortex-A72 ARM processors", [
+                                   FeatureCRC,
+                                   FeatureCrypto,
+                                   FeatureFPARMv8,
+                                   FeatureNEON,
+                                   FeaturePerfMon
+                                   ]>;
+
+def ProcA73     : SubtargetFeature<"a73", "ARMProcFamily", "CortexA73",
+                                   "Cortex-A73 ARM processors", [
+                                   FeatureCRC,
+                                   FeatureCrypto,
+                                   FeatureFPARMv8,
+                                   FeatureNEON,
+                                   FeaturePerfMon
+                                   ]>;
+
 def ProcCyclone : SubtargetFeature<"cyclone", "ARMProcFamily", "Cyclone",
                                    "Cyclone", [
                                    FeatureAlternateSExtLoadCVTF32Pattern,
@@ -215,6 +233,14 @@ def ProcKryo    : SubtargetFeature<"kryo", "ARMProcFamily", "Kryo",
                                    FeaturePredictableSelectIsExpensive
                                    ]>;
 
+def ProcVulcan  : SubtargetFeature<"vulcan", "ARMProcFamily", "Vulcan",
+                                   "Broadcom Vulcan processors", [
+                                   FeatureFPARMv8,
+                                   FeatureNEON,
+                                   FeatureCrypto,
+                                   FeatureCRC,
+                                   HasV8_1aOps]>;
+
 def : ProcessorModel<"generic", NoSchedModel, [
                      FeatureCRC,
                      FeatureFPARMv8,
@@ -228,11 +254,12 @@ def : ProcessorModel<"cortex-a35", CortexA53Model, [ProcA35]>;
 def : ProcessorModel<"cortex-a53", CortexA53Model, [ProcA53]>;
 def : ProcessorModel<"cortex-a57", CortexA57Model, [ProcA57]>;
 // FIXME: Cortex-A72 and Cortex-A73 are currently modelled as an Cortex-A57.
-def : ProcessorModel<"cortex-a72", CortexA57Model, [ProcA57]>;
-def : ProcessorModel<"cortex-a73", CortexA57Model, [ProcA57]>;
+def : ProcessorModel<"cortex-a72", CortexA57Model, [ProcA72]>;
+def : ProcessorModel<"cortex-a73", CortexA57Model, [ProcA73]>;
 def : ProcessorModel<"cyclone", CycloneModel, [ProcCyclone]>;
 def : ProcessorModel<"exynos-m1", ExynosM1Model, [ProcExynosM1]>;
 def : ProcessorModel<"kryo", KryoModel, [ProcKryo]>;
+def : ProcessorModel<"vulcan", NoSchedModel, [ProcVulcan]>;
 
 //===----------------------------------------------------------------------===//
 // Assembly parser

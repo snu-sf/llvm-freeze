@@ -552,14 +552,14 @@ BitcodeDiagnosticInfo::BitcodeDiagnosticInfo(std::error_code EC,
 
 void BitcodeDiagnosticInfo::print(DiagnosticPrinter &DP) const { DP << Msg; }
 
-static std::error_code error(DiagnosticHandlerFunction DiagnosticHandler,
+static std::error_code error(const DiagnosticHandlerFunction &DiagnosticHandler,
                              std::error_code EC, const Twine &Message) {
   BitcodeDiagnosticInfo DI(EC, DS_Error, Message);
   DiagnosticHandler(DI);
   return EC;
 }
 
-static std::error_code error(DiagnosticHandlerFunction DiagnosticHandler,
+static std::error_code error(const DiagnosticHandlerFunction &DiagnosticHandler,
                              std::error_code EC) {
   return error(DiagnosticHandler, EC, EC.message());
 }
@@ -770,6 +770,15 @@ static GlobalVariable::ThreadLocalMode getDecodedThreadLocalMode(unsigned Val) {
     case 2: return GlobalVariable::LocalDynamicTLSModel;
     case 3: return GlobalVariable::InitialExecTLSModel;
     case 4: return GlobalVariable::LocalExecTLSModel;
+  }
+}
+
+static GlobalVariable::UnnamedAddr getDecodedUnnamedAddrType(unsigned Val) {
+  switch (Val) {
+    default: // Map unknown to UnnamedAddr::None.
+    case 0: return GlobalVariable::UnnamedAddr::None;
+    case 1: return GlobalVariable::UnnamedAddr::Global;
+    case 2: return GlobalVariable::UnnamedAddr::Local;
   }
 }
 
@@ -2683,6 +2692,16 @@ std::error_code BitcodeReader::parseMetadata(bool ModuleLevel) {
               parseMetadataStrings(Record, Blob, NextMetadataNo))
         return EC;
       break;
+    case bitc::METADATA_GLOBAL_DECL_ATTACHMENT: {
+      if (Record.size() % 2 == 0)
+        return error("Invalid record");
+      unsigned ValueID = Record[0];
+      if (ValueID >= ValueList.size())
+        return error("Invalid record");
+      if (auto *GO = dyn_cast<GlobalObject>(ValueList[ValueID]))
+        parseGlobalObjectAttachment(*GO, ArrayRef<uint64_t>(Record).slice(1));
+      break;
+    }
     case bitc::METADATA_KIND: {
       // Support older bitcode files that had METADATA_KIND records in a
       // block with METADATA_BLOCK_ID.
@@ -3791,9 +3810,9 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       if (Record.size() > 7)
         TLM = getDecodedThreadLocalMode(Record[7]);
 
-      bool UnnamedAddr = false;
+      GlobalValue::UnnamedAddr UnnamedAddr = GlobalValue::UnnamedAddr::None;
       if (Record.size() > 8)
-        UnnamedAddr = Record[8];
+        UnnamedAddr = getDecodedUnnamedAddrType(Record[8]);
 
       bool ExternallyInitialized = false;
       if (Record.size() > 9)
@@ -3828,16 +3847,7 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       } else if (hasImplicitComdat(RawLinkage)) {
         NewGV->setComdat(reinterpret_cast<Comdat *>(1));
       }
-      break;
-    }
-    case bitc::MODULE_CODE_GLOBALVAR_ATTACHMENT: {
-      if (Record.size() % 2 == 0)
-        return error("Invalid record");
-      unsigned ValueID = Record[0];
-      if (ValueID >= ValueList.size())
-        return error("Invalid record");
-      if (auto *GV = dyn_cast<GlobalVariable>(ValueList[ValueID]))
-        parseGlobalObjectAttachment(*GV, ArrayRef<uint64_t>(Record).slice(1));
+
       break;
     }
     // FUNCTION:  [type, callingconv, isproto, linkage, paramattr,
@@ -3885,9 +3895,9 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
           return error("Invalid ID");
         Func->setGC(GCTable[Record[8] - 1]);
       }
-      bool UnnamedAddr = false;
+      GlobalValue::UnnamedAddr UnnamedAddr = GlobalValue::UnnamedAddr::None;
       if (Record.size() > 9)
-        UnnamedAddr = Record[9];
+        UnnamedAddr = getDecodedUnnamedAddrType(Record[9]);
       Func->setUnnamedAddr(UnnamedAddr);
       if (Record.size() > 10 && Record[10] != 0)
         FunctionPrologues.push_back(std::make_pair(Func, Record[10]-1));
@@ -3974,7 +3984,7 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       if (OpNum != Record.size())
         NewGA->setThreadLocalMode(getDecodedThreadLocalMode(Record[OpNum++]));
       if (OpNum != Record.size())
-        NewGA->setUnnamedAddr(Record[OpNum++]);
+        NewGA->setUnnamedAddr(getDecodedUnnamedAddrType(Record[OpNum++]));
       ValueList.push_back(NewGA);
       IndirectSymbolInits.push_back(std::make_pair(NewGA, Val));
       break;
@@ -6545,9 +6555,9 @@ std::string llvm::getBitcodeProducerString(MemoryBufferRef Buffer,
 }
 
 // Parse the specified bitcode buffer, returning the function info index.
-ErrorOr<std::unique_ptr<ModuleSummaryIndex>>
-llvm::getModuleSummaryIndex(MemoryBufferRef Buffer,
-                            DiagnosticHandlerFunction DiagnosticHandler) {
+ErrorOr<std::unique_ptr<ModuleSummaryIndex>> llvm::getModuleSummaryIndex(
+    MemoryBufferRef Buffer,
+    const DiagnosticHandlerFunction &DiagnosticHandler) {
   std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Buffer, false);
   ModuleSummaryIndexBitcodeReader R(Buf.get(), DiagnosticHandler);
 
@@ -6566,8 +6576,9 @@ llvm::getModuleSummaryIndex(MemoryBufferRef Buffer,
 }
 
 // Check if the given bitcode buffer contains a global value summary block.
-bool llvm::hasGlobalValueSummary(MemoryBufferRef Buffer,
-                                 DiagnosticHandlerFunction DiagnosticHandler) {
+bool llvm::hasGlobalValueSummary(
+    MemoryBufferRef Buffer,
+    const DiagnosticHandlerFunction &DiagnosticHandler) {
   std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Buffer, false);
   ModuleSummaryIndexBitcodeReader R(Buf.get(), DiagnosticHandler, true);
 

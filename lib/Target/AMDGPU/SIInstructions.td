@@ -430,6 +430,7 @@ def S_ENDPGM : SOPP <0x00000001, (ins), "s_endpgm",
   let simm16 = 0;
   let isBarrier = 1;
   let hasCtrlDep = 1;
+  let hasSideEffects = 1;
 }
 
 let isBranch = 1 in {
@@ -2107,10 +2108,10 @@ defm SI_SPILL_V512 : SI_SPILL_VGPR <VReg_512>;
 
 let Defs = [SCC] in {
 
-def SI_CONSTDATA_PTR : InstSI <
+def SI_PC_ADD_REL_OFFSET : InstSI <
   (outs SReg_64:$dst),
-  (ins const_ga:$ptr),
-  "", [(set SReg_64:$dst, (i64 (AMDGPUconstdata_ptr (tglobaladdr:$ptr))))]
+  (ins si_ga:$ptr),
+  "", [(set SReg_64:$dst, (i64 (SIpc_add_rel_offset (tglobaladdr:$ptr))))]
 > {
   let SALU = 1;
 }
@@ -3051,12 +3052,6 @@ def : Pat <
   (V_CVT_U32_F32_e32
     (V_MUL_F32_e32 CONST.FP_UINT_MAX_PLUS_1,
                    (V_RCP_IFLAG_F32_e32 (V_CVT_F32_U32_e32 $src0))))
->;
-
-def : Pat <
-  (int_SI_tid),
-  (V_MBCNT_HI_U32_B32_e64 0xffffffff,
-                          (V_MBCNT_LO_U32_B32_e64 0xffffffff, 0))
 >;
 
 //===----------------------------------------------------------------------===//

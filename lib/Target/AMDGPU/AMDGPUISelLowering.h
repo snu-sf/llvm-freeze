@@ -201,8 +201,9 @@ public:
                                        unsigned Reg, EVT VT) const;
 
   enum ImplicitParameter {
-    GRID_DIM,
-    GRID_OFFSET
+    FIRST_IMPLICIT,
+    GRID_DIM = FIRST_IMPLICIT,
+    GRID_OFFSET,
   };
 
   /// \brief Helper function that returns the byte offset of the given
@@ -297,6 +298,7 @@ enum NodeType : unsigned {
   INTERP_MOV,
   INTERP_P1,
   INTERP_P2,
+  PC_ADD_REL_OFFSET,
   FIRST_MEM_OPCODE_NUMBER = ISD::FIRST_TARGET_MEMORY_OPCODE,
   STORE_MSKOR,
   LOAD_CONSTANT,

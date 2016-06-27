@@ -14,7 +14,6 @@
 
 #include "llvm-c/Core.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "AttributeImpl.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallSite.h"
@@ -209,7 +208,6 @@ LLVMDiagnosticSeverity LLVMGetDiagInfoSeverity(LLVMDiagnosticInfoRef DI) {
 
     return severity;
 }
-
 
 /*===-- Operations on modules ---------------------------------------------===*/
 
@@ -1560,11 +1558,13 @@ void LLVMSetDLLStorageClass(LLVMValueRef Global, LLVMDLLStorageClass Class) {
 }
 
 LLVMBool LLVMHasUnnamedAddr(LLVMValueRef Global) {
-  return unwrap<GlobalValue>(Global)->hasUnnamedAddr();
+  return unwrap<GlobalValue>(Global)->hasGlobalUnnamedAddr();
 }
 
 void LLVMSetUnnamedAddr(LLVMValueRef Global, LLVMBool HasUnnamedAddr) {
-  unwrap<GlobalValue>(Global)->setUnnamedAddr(HasUnnamedAddr);
+  unwrap<GlobalValue>(Global)->setUnnamedAddr(
+      HasUnnamedAddr ? GlobalValue::UnnamedAddr::Global
+                     : GlobalValue::UnnamedAddr::None);
 }
 
 /*--.. Operations on global variables, load and store instructions .........--*/
@@ -1851,9 +1851,20 @@ LLVMAttributeRef LLVMGetEnumAttributeAtIndex(LLVMValueRef F,
                                                 (Attribute::AttrKind)KindID));
 }
 
+LLVMAttributeRef LLVMGetStringAttributeAtIndex(LLVMValueRef F,
+                                               LLVMAttributeIndex Idx,
+                                               const char *K, unsigned KLen) {
+  return wrap(unwrap<Function>(F)->getAttribute(Idx, StringRef(K, KLen)));
+}
+
 void LLVMRemoveEnumAttributeAtIndex(LLVMValueRef F, LLVMAttributeIndex Idx,
                                     unsigned KindID) {
   unwrap<Function>(F)->removeAttribute(Idx, (Attribute::AttrKind)KindID);
+}
+
+void LLVMRemoveStringAttributeAtIndex(LLVMValueRef F, LLVMAttributeIndex Idx,
+                                      const char *K, unsigned KLen) {
+  unwrap<Function>(F)->removeAttribute(Idx, StringRef(K, KLen));
 }
 
 void LLVMAddTargetDependentFunctionAttr(LLVMValueRef Fn, const char *A,
@@ -2198,6 +2209,36 @@ void LLVMSetInstrParamAlignment(LLVMValueRef Instr, unsigned index,
                        .addAttributes(Call->getContext(), index,
                                       AttributeSet::get(Call->getContext(),
                                                         index, B)));
+}
+
+void LLVMAddCallSiteAttribute(LLVMValueRef C, LLVMAttributeIndex Idx,
+                              LLVMAttributeRef A) {
+  CallSite(unwrap<Instruction>(C)).addAttribute(Idx, unwrap(A));
+}
+
+LLVMAttributeRef LLVMGetCallSiteEnumAttribute(LLVMValueRef C,
+                                              LLVMAttributeIndex Idx,
+                                              unsigned KindID) {
+  return wrap(CallSite(unwrap<Instruction>(C))
+    .getAttribute(Idx, (Attribute::AttrKind)KindID));
+}
+
+LLVMAttributeRef LLVMGetCallSiteStringAttribute(LLVMValueRef C,
+                                                LLVMAttributeIndex Idx,
+                                                const char *K, unsigned KLen) {
+  return wrap(CallSite(unwrap<Instruction>(C))
+    .getAttribute(Idx, StringRef(K, KLen)));
+}
+
+void LLVMRemoveCallSiteEnumAttribute(LLVMValueRef C, LLVMAttributeIndex Idx,
+                                     unsigned KindID) {
+  CallSite(unwrap<Instruction>(C))
+    .removeAttribute(Idx, (Attribute::AttrKind)KindID);
+}
+
+void LLVMRemoveCallSiteStringAttribute(LLVMValueRef C, LLVMAttributeIndex Idx,
+                                       const char *K, unsigned KLen) {
+  CallSite(unwrap<Instruction>(C)).removeAttribute(Idx, StringRef(K, KLen));
 }
 
 LLVMValueRef LLVMGetCalledValue(LLVMValueRef Instr) {

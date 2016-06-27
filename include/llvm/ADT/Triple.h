@@ -179,6 +179,7 @@ public:
     EABI,
     EABIHF,
     Android,
+    Musl,
 
     MSVC,
     Itanium,
@@ -467,6 +468,12 @@ public:
 
   bool isOSIAMCU() const {
     return getOS() == Triple::ELFIAMCU;
+  }
+
+  bool isGNUEnvironment() const {
+    EnvironmentType Env = getEnvironment();
+    return Env == Triple::GNU || Env == Triple::GNUEABI ||
+           Env == Triple::GNUEABIHF || Env == Triple::GNUX32;
   }
 
   /// Checks if the environment could be MSVC.

@@ -7774,14 +7774,24 @@ def INSERTQ  : I<0x79, MRMSrcReg, (outs VR128:$dst),
                                     VR128:$mask))]>, XD;
 }
 
+// Non-temporal (unaligned) scalar stores.
+let AddedComplexity = 400 in { // Prefer non-temporal versions
+let mayStore = 1, SchedRW = [WriteStore] in {
 def MOVNTSS : I<0x2B, MRMDestMem, (outs), (ins f32mem:$dst, VR128:$src),
-                "movntss\t{$src, $dst|$dst, $src}",
-                [(int_x86_sse4a_movnt_ss addr:$dst, VR128:$src)]>, XS;
+                "movntss\t{$src, $dst|$dst, $src}", [], IIC_SSE_MOVNT>, XS;
 
 def MOVNTSD : I<0x2B, MRMDestMem, (outs), (ins f64mem:$dst, VR128:$src),
-                "movntsd\t{$src, $dst|$dst, $src}",
-                [(int_x86_sse4a_movnt_sd addr:$dst, VR128:$src)]>, XD;
-}
+                "movntsd\t{$src, $dst|$dst, $src}", [], IIC_SSE_MOVNT>, XD;
+} // SchedRW
+
+def : Pat<(nontemporalstore FR32:$src, addr:$dst),
+          (MOVNTSS addr:$dst, (COPY_TO_REGCLASS FR32:$src, VR128))>;
+
+def : Pat<(nontemporalstore FR64:$src, addr:$dst),
+          (MOVNTSD addr:$dst, (COPY_TO_REGCLASS FR64:$src, VR128))>;
+
+} // AddedComplexity
+} // HasSSE4A
 
 //===----------------------------------------------------------------------===//
 // AVX Instructions
@@ -8364,7 +8374,7 @@ let Predicates = [HasAVX2, NoVLX] in {
               (VBROADCASTSSYrr (COPY_TO_REGCLASS FR32:$src, VR128))>;
     def : Pat<(v4f64 (X86VBroadcast FR64:$src)),
               (VBROADCASTSDYrr (COPY_TO_REGCLASS FR64:$src, VR128))>;
-    }  
+    }
 }
 
 let Predicates = [HasAVX2, NoVLX_Or_NoBWI], AddedComplexity = 20 in {
@@ -8754,6 +8764,8 @@ let Predicates = [HasAVX2, NoVLX] in {
   defm VPSRLVD : avx2_var_shift<0x45, "vpsrlvd", srl, v4i32, v8i32>;
   defm VPSRLVQ : avx2_var_shift<0x45, "vpsrlvq", srl, v2i64, v4i64>, VEX_W;
   defm VPSRAVD : avx2_var_shift<0x46, "vpsravd", sra, v4i32, v8i32>;
+  let isCodeGenOnly = 1 in
+    defm VPSRAVD_Int : avx2_var_shift<0x46, "vpsravd", X86vsrav, v4i32, v8i32>;
 }
 //===----------------------------------------------------------------------===//
 // VGATHER - GATHER Operations

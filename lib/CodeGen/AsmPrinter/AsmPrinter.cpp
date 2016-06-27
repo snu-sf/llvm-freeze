@@ -406,29 +406,42 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     HI.Handler->setSymbolSize(GVSym, Size);
   }
 
-  // Handle common and BSS local symbols (.lcomm).
-  if (GVKind.isCommon() || GVKind.isBSSLocal()) {
+  // Handle common symbols
+  if (GVKind.isCommon()) {
     if (Size == 0) Size = 1;   // .comm Foo, 0 is undefined, avoid it.
     unsigned Align = 1 << AlignLog;
+    if (!getObjFileLowering().getCommDirectiveSupportsAlignment())
+      Align = 0;
 
-    // Handle common symbols.
-    if (GVKind.isCommon()) {
-      if (!getObjFileLowering().getCommDirectiveSupportsAlignment())
-        Align = 0;
+    // .comm _foo, 42, 4
+    OutStreamer->EmitCommonSymbol(GVSym, Size, Align);
+    return;
+  }
 
-      // .comm _foo, 42, 4
-      OutStreamer->EmitCommonSymbol(GVSym, Size, Align);
-      return;
-    }
+  // Determine to which section this global should be emitted.
+  MCSection *TheSection =
+      getObjFileLowering().SectionForGlobal(GV, GVKind, *Mang, TM);
 
-    // Handle local BSS symbols.
-    if (MAI->hasMachoZeroFillDirective()) {
-      MCSection *TheSection =
-          getObjFileLowering().SectionForGlobal(GV, GVKind, *Mang, TM);
-      // .zerofill __DATA, __bss, _foo, 400, 5
-      OutStreamer->EmitZerofill(TheSection, GVSym, Size, Align);
-      return;
-    }
+  // If we have a bss global going to a section that supports the
+  // zerofill directive, do so here.
+  if (GVKind.isBSS() && MAI->hasMachoZeroFillDirective() &&
+      TheSection->isVirtualSection()) {
+    if (Size == 0)
+      Size = 1; // zerofill of 0 bytes is undefined.
+    unsigned Align = 1 << AlignLog;
+    EmitLinkage(GV, GVSym);
+    // .zerofill __DATA, __bss, _foo, 400, 5
+    OutStreamer->EmitZerofill(TheSection, GVSym, Size, Align);
+    return;
+  }
+
+  // If this is a BSS local symbol and we are emitting in the BSS
+  // section use .lcomm/.comm directive.
+  if (GVKind.isBSSLocal() &&
+      getObjFileLowering().getBSSSection() == TheSection) {
+    if (Size == 0)
+      Size = 1; // .comm Foo, 0 is undefined, avoid it.
+    unsigned Align = 1 << AlignLog;
 
     // Use .lcomm only if it supports user-specified alignment.
     // Otherwise, while it would still be correct to use .lcomm in some
@@ -449,23 +462,6 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     OutStreamer->EmitSymbolAttribute(GVSym, MCSA_Local);
     // .comm _foo, 42, 4
     OutStreamer->EmitCommonSymbol(GVSym, Size, Align);
-    return;
-  }
-
-  MCSymbol *EmittedInitSym = GVSym;
-
-  MCSection *TheSection =
-      getObjFileLowering().SectionForGlobal(GV, GVKind, *Mang, TM);
-
-  // Handle the zerofill directive on darwin, which is a special form of BSS
-  // emission.
-  if (GVKind.isBSSExtern() && MAI->hasMachoZeroFillDirective()) {
-    if (Size == 0) Size = 1;  // zerofill of 0 bytes is undefined.
-
-    // .globl _foo
-    OutStreamer->EmitSymbolAttribute(GVSym, MCSA_Global);
-    // .zerofill __DATA, __common, _foo, 400, 5
-    OutStreamer->EmitZerofill(TheSection, GVSym, Size, 1 << AlignLog);
     return;
   }
 
@@ -520,6 +516,8 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     OutStreamer->AddBlankLine();
     return;
   }
+
+  MCSymbol *EmittedInitSym = GVSym;
 
   OutStreamer->SwitchSection(TheSection);
 
@@ -1003,7 +1001,7 @@ static bool isGOTEquivalentCandidate(const GlobalVariable *GV,
   // Global GOT equivalents are unnamed private globals with a constant
   // pointer initializer to another global symbol. They must point to a
   // GlobalVariable or Function, i.e., as GlobalValue.
-  if (!GV->hasUnnamedAddr() || !GV->hasInitializer() || !GV->isConstant() ||
+  if (!GV->hasGlobalUnnamedAddr() || !GV->hasInitializer() || !GV->isConstant() ||
       !GV->isDiscardableIfUnused() || !dyn_cast<GlobalValue>(GV->getOperand(0)))
     return false;
 
@@ -1414,7 +1412,7 @@ void AsmPrinter::EmitJumpTableInfo() {
     // For the EK_LabelDifference32 entry, if using .set avoids a relocation,
     /// emit a .set directive for each unique entry.
     if (MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32 &&
-        MAI->doesSetDirectiveSuppressesReloc()) {
+        MAI->doesSetDirectiveSuppressReloc()) {
       SmallPtrSet<const MachineBasicBlock*, 16> EmittedSets;
       const TargetLowering *TLI = MF->getSubtarget().getTargetLowering();
       const MCExpr *Base = TLI->getPICJumpTableRelocBaseExpr(MF,JTI,OutContext);
@@ -1495,7 +1493,7 @@ void AsmPrinter::EmitJumpTableEntry(const MachineJumpTableInfo *MJTI,
     // If the .set directive avoids relocations, this is emitted as:
     //      .set L4_5_set_123, LBB123 - LJTI1_2
     //      .word L4_5_set_123
-    if (MAI->doesSetDirectiveSuppressesReloc()) {
+    if (MAI->doesSetDirectiveSuppressReloc()) {
       Value = MCSymbolRefExpr::create(GetJTSetSymbol(UID, MBB->getNumber()),
                                       OutContext);
       break;

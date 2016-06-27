@@ -39,9 +39,12 @@ public:
     CortexA35,
     CortexA53,
     CortexA57,
+    CortexA72,
+    CortexA73,
     Cyclone,
     ExynosM1,
-    Kryo
+    Kryo,
+    Vulcan
   };
 
 protected:

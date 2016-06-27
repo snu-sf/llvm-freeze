@@ -473,7 +473,7 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::ATOMIC_FETCH_NAND_8] = "__atomic_fetch_nand_8";
   Names[RTLIB::ATOMIC_FETCH_NAND_16] = "__atomic_fetch_nand_16";
 
-  if (TT.getEnvironment() == Triple::GNU) {
+  if (TT.isGNUEnvironment()) {
     Names[RTLIB::SINCOS_F32] = "sincosf";
     Names[RTLIB::SINCOS_F64] = "sincos";
     Names[RTLIB::SINCOS_F80] = "sincosl";
@@ -829,6 +829,8 @@ TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm) : TM(tm) {
   // TODO: the default will be switched to 0 in the next commit, along
   // with the Target-specific changes necessary.
   MaxAtomicSizeInBitsSupported = 1024;
+
+  MinCmpXchgSizeInBits = 0;
 
   std::fill(std::begin(LibcallRoutineNames), std::end(LibcallRoutineNames), nullptr);
 
