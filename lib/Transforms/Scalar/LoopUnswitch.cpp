@@ -810,6 +810,20 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
   SplitCriticalEdge(BI, 1, Options);
 }
 
+// Freeze the hoisted branch condition
+void FreezeCond(Value* &cond) {
+  // freeze: Insert freeze when cond is an instruction.
+  if (Instruction *condInst = dyn_cast<Instruction>(cond)) {
+    Instruction *insertPt = &*(++condInst->getIterator());
+    FreezeInst *freezeInst = new FreezeInst(condInst, condInst->getName() + ".fr", insertPt);
+
+    condInst->replaceAllUsesWith(freezeInst);
+    freezeInst->replaceUsesOfWith(freezeInst, condInst);
+
+    cond = freezeInst;
+  }
+}
+
 /// Given a loop that has a trivial unswitchable condition in it (a cond branch
 /// from its header block to its latch block, where the path through the loop
 /// that doesn't execute its body has no side-effects), unswitch it. This
@@ -839,6 +853,9 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
   // loop header, not the preheader).
   assert(!L->contains(ExitBlock) && "Exit block is in the loop?");
   BasicBlock *NewExit = SplitBlock(ExitBlock, &ExitBlock->front(), DT, LI);
+
+  // freeze
+  FreezeCond(Cond);
 
   // Okay, now we have a position to branch from and a position to branch to,
   // insert the new conditional branch.
@@ -1144,6 +1161,10 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
          "Preheader splitting did not work correctly!");
 
   // Emit the new branch that selects between the two versions of this loop.
+
+  // freeze
+  FreezeCond(LIC);
+  
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR,
                                  TI);
   LPM->deleteSimpleAnalysisValue(OldBR, L);
