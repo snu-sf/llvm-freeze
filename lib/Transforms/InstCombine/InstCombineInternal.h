@@ -312,6 +312,7 @@ public:
   Instruction *visitSelectInstWithICmp(SelectInst &SI, ICmpInst *ICI);
   Instruction *visitCallInst(CallInst &CI);
   Instruction *visitInvokeInst(InvokeInst &II);
+  Instruction *visitFreeze(FreezeInst &FI);
 
   Instruction *SliceUpIllegalIntegerPHI(PHINode &PN);
   Instruction *visitPHINode(PHINode &PN);
