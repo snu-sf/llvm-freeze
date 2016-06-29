@@ -116,7 +116,7 @@ protected:
                      const SmallVectorImpl<ISD::OutputArg> &Outs) const;
 
 public:
-  AMDGPUTargetLowering(TargetMachine &TM, const AMDGPUSubtarget &STI);
+  AMDGPUTargetLowering(const TargetMachine &TM, const AMDGPUSubtarget &STI);
 
   bool isFAbsFree(EVT VT) const override;
   bool isFNegFree(EVT VT) const override;
@@ -219,9 +219,10 @@ enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   CALL,        // Function call based on a single integer
   UMUL,        // 32bit unsigned multiplication
-  RET_FLAG,
   BRANCH_COND,
   // End AMDIL ISD Opcodes
+  ENDPGM,
+  RETURN,
   DWORDADDR,
   FRACT,
   CLAMP,

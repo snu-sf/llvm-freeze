@@ -2126,11 +2126,8 @@ AssemblyWriter::AssemblyWriter(formatted_raw_ostream &o, SlotTracker &Mac,
   if (!TheModule)
     return;
   TypePrinter.incorporateTypes(*TheModule);
-  for (const Function &F : *TheModule)
-    if (const Comdat *C = F.getComdat())
-      Comdats.insert(C);
-  for (const GlobalVariable &GV : TheModule->globals())
-    if (const Comdat *C = GV.getComdat())
+  for (const GlobalObject &GO : TheModule->global_objects())
+    if (const Comdat *C = GO.getComdat())
       Comdats.insert(C);
 }
 
@@ -2712,8 +2709,8 @@ void AssemblyWriter::printFunction(const Function *F) {
 
     Out << " {";
     // Output all of the function's basic blocks.
-    for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)
-      printBasicBlock(&*I);
+    for (const BasicBlock &BB : *F)
+      printBasicBlock(&BB);
 
     // Output the function's use-lists.
     printUseLists(F);
@@ -2785,8 +2782,8 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockStartAnnot(BB, Out);
 
   // Output all of the instructions in the basic block...
-  for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-    printInstructionLine(*I);
+  for (const Instruction &I : *BB) {
+    printInstructionLine(I);
   }
 
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockEndAnnot(BB, Out);
@@ -3246,10 +3243,9 @@ void AssemblyWriter::writeAllAttributeGroups() {
        I != E; ++I)
     asVec[I->second] = *I;
 
-  for (std::vector<std::pair<AttributeSet, unsigned> >::iterator
-         I = asVec.begin(), E = asVec.end(); I != E; ++I)
-    Out << "attributes #" << I->second << " = { "
-        << I->first.getAsString(AttributeSet::FunctionIndex, true) << " }\n";
+  for (const auto &I : asVec)
+    Out << "attributes #" << I.second << " = { "
+        << I.first.getAsString(AttributeSet::FunctionIndex, true) << " }\n";
 }
 
 void AssemblyWriter::printUseListOrder(const UseListOrder &Order) {

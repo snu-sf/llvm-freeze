@@ -25,6 +25,7 @@ namespace llvm {
 class SIInstrInfo final : public AMDGPUInstrInfo {
 private:
   const SIRegisterInfo RI;
+  const SISubtarget &ST;
 
   // The the inverse predicate should have the negative value.
   enum BranchPredicate {
@@ -91,9 +92,9 @@ protected:
                                        unsigned OpIdx1) const override;
 
 public:
-  explicit SIInstrInfo(const AMDGPUSubtarget &st);
+  explicit SIInstrInfo(const SISubtarget &);
 
-  const SIRegisterInfo &getRegisterInfo() const override {
+  const SIRegisterInfo &getRegisterInfo() const {
     return RI;
   }
 
@@ -346,6 +347,14 @@ public:
 
   bool isDPP(uint16_t Opcode) const {
     return get(Opcode).TSFlags & SIInstrFlags::DPP;
+  }
+
+  bool isVGPRCopy(const MachineInstr &MI) const {
+    assert(MI.isCopy());
+    unsigned Dest = MI.getOperand(0).getReg();
+    const MachineFunction &MF = *MI.getParent()->getParent();
+    const MachineRegisterInfo &MRI = MF.getRegInfo();
+    return !RI.isSGPRReg(MRI, Dest);
   }
 
   bool isInlineConstant(const APInt &Imm) const;

@@ -15,6 +15,7 @@
 #include "llvm/Bitcode/LLVMBitCodes.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/AutoUpgrade.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -230,8 +231,10 @@ class BitcodeReader : public GVMaterializer {
 
   // When intrinsic functions are encountered which require upgrading they are
   // stored here with their replacement function.
-  typedef DenseMap<Function*, Function*> UpgradedIntrinsicMap;
-  UpgradedIntrinsicMap UpgradedIntrinsics;
+  typedef DenseMap<Function*, Function*> UpdatedIntrinsicMap;
+  UpdatedIntrinsicMap UpgradedIntrinsics;
+  // Intrinsics which were remangled because of types rename
+  UpdatedIntrinsicMap RemangledIntrinsics;
 
   // Map the bitcode's custom MDKind ID to the Module's MDKind ID.
   DenseMap<unsigned, unsigned> MDKindMap;
@@ -281,7 +284,6 @@ class BitcodeReader : public GVMaterializer {
 
 public:
   std::error_code error(BitcodeError E, const Twine &Message);
-  std::error_code error(BitcodeError E);
   std::error_code error(const Twine &Message);
 
   BitcodeReader(MemoryBuffer *Buffer, LLVMContext &Context);
@@ -506,15 +508,10 @@ class ModuleSummaryIndexBitcodeReader {
   std::string SourceFileName;
 
 public:
-  std::error_code error(BitcodeError E, const Twine &Message);
-  std::error_code error(BitcodeError E);
   std::error_code error(const Twine &Message);
 
   ModuleSummaryIndexBitcodeReader(
       MemoryBuffer *Buffer, DiagnosticHandlerFunction DiagnosticHandler,
-      bool CheckGlobalValSummaryPresenceOnly = false);
-  ModuleSummaryIndexBitcodeReader(
-      DiagnosticHandlerFunction DiagnosticHandler,
       bool CheckGlobalValSummaryPresenceOnly = false);
   ~ModuleSummaryIndexBitcodeReader() { freeState(); }
 
@@ -559,19 +556,10 @@ static std::error_code error(const DiagnosticHandlerFunction &DiagnosticHandler,
   return EC;
 }
 
-static std::error_code error(const DiagnosticHandlerFunction &DiagnosticHandler,
-                             std::error_code EC) {
-  return error(DiagnosticHandler, EC, EC.message());
-}
-
 static std::error_code error(LLVMContext &Context, std::error_code EC,
                              const Twine &Message) {
   return error([&](const DiagnosticInfo &DI) { Context.diagnose(DI); }, EC,
                Message);
-}
-
-static std::error_code error(LLVMContext &Context, std::error_code EC) {
-  return error(Context, EC, EC.message());
 }
 
 static std::error_code error(LLVMContext &Context, const Twine &Message) {
@@ -596,10 +584,6 @@ std::error_code BitcodeReader::error(const Twine &Message) {
   }
   return ::error(Context, make_error_code(BitcodeError::CorruptedBitcode),
                  Message);
-}
-
-std::error_code BitcodeReader::error(BitcodeError E) {
-  return ::error(Context, make_error_code(E));
 }
 
 BitcodeReader::BitcodeReader(MemoryBuffer *Buffer, LLVMContext &Context)
@@ -3444,6 +3428,11 @@ std::error_code BitcodeReader::globalCleanup() {
     Function *NewFn;
     if (UpgradeIntrinsicFunction(&F, NewFn))
       UpgradedIntrinsics[&F] = NewFn;
+    else if (auto Remangled = Intrinsic::remangleIntrinsicFunction(&F))
+      // Some types could be renamed during loading if several modules are
+      // loaded in the same LLVMContext (LTO scenario). In this case we should
+      // remangle intrinsics names as well.
+      RemangledIntrinsics[&F] = Remangled.getValue();
   }
 
   // Look for global variables which need to be renamed.
@@ -5620,6 +5609,13 @@ std::error_code BitcodeReader::materialize(GlobalValue *GV) {
     }
   }
 
+  // Update calls to the remangled intrinsics
+  for (auto &I : RemangledIntrinsics)
+    for (auto UI = I.first->materialized_user_begin(), UE = I.first->user_end();
+         UI != UE;)
+      // Don't expect any other users than call sites
+      CallSite(*UI++).setCalledFunction(I.second);
+
   // Finish fn->subprogram upgrade for materialized functions.
   if (DISubprogram *SP = FunctionsWithSPs.lookup(F))
     F->setSubprogram(SP);
@@ -5673,6 +5669,12 @@ std::error_code BitcodeReader::materializeModule() {
     I.first->eraseFromParent();
   }
   UpgradedIntrinsics.clear();
+  // Do the same for remangled intrinsics
+  for (auto &I : RemangledIntrinsics) {
+    I.first->replaceAllUsesWith(I.second);
+    I.first->eraseFromParent();
+  }
+  RemangledIntrinsics.clear();
 
   UpgradeDebugInfo(*TheModule);
 
@@ -5737,30 +5739,15 @@ BitcodeReader::initLazyStream(std::unique_ptr<DataStreamer> Streamer) {
   return std::error_code();
 }
 
-std::error_code ModuleSummaryIndexBitcodeReader::error(BitcodeError E,
-                                                       const Twine &Message) {
-  return ::error(DiagnosticHandler, make_error_code(E), Message);
-}
-
 std::error_code ModuleSummaryIndexBitcodeReader::error(const Twine &Message) {
   return ::error(DiagnosticHandler,
                  make_error_code(BitcodeError::CorruptedBitcode), Message);
-}
-
-std::error_code ModuleSummaryIndexBitcodeReader::error(BitcodeError E) {
-  return ::error(DiagnosticHandler, make_error_code(E));
 }
 
 ModuleSummaryIndexBitcodeReader::ModuleSummaryIndexBitcodeReader(
     MemoryBuffer *Buffer, DiagnosticHandlerFunction DiagnosticHandler,
     bool CheckGlobalValSummaryPresenceOnly)
     : DiagnosticHandler(std::move(DiagnosticHandler)), Buffer(Buffer),
-      CheckGlobalValSummaryPresenceOnly(CheckGlobalValSummaryPresenceOnly) {}
-
-ModuleSummaryIndexBitcodeReader::ModuleSummaryIndexBitcodeReader(
-    DiagnosticHandlerFunction DiagnosticHandler,
-    bool CheckGlobalValSummaryPresenceOnly)
-    : DiagnosticHandler(std::move(DiagnosticHandler)), Buffer(nullptr),
       CheckGlobalValSummaryPresenceOnly(CheckGlobalValSummaryPresenceOnly) {}
 
 void ModuleSummaryIndexBitcodeReader::freeState() { Buffer = nullptr; }

@@ -515,8 +515,6 @@ namespace llvm {
       // Memory barriers.
       MEMBARRIER,
       MFENCE,
-      SFENCE,
-      LFENCE,
 
       // Store FP status word into i16 register.
       FNSTSW16r,
@@ -658,7 +656,6 @@ namespace llvm {
   //  X86 Implementation of the TargetLowering interface
   class X86TargetLowering final : public TargetLowering {
   public:
-    bool isPositionIndependent() const;
     explicit X86TargetLowering(const X86TargetMachine &TM,
                                const X86Subtarget &STI);
 

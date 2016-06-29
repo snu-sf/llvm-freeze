@@ -901,8 +901,8 @@ bool llvm::promoteLoopAccessesToScalars(
   // cannot (yet) promote a memory location that is loaded and stored in
   // different sizes.  While we are at it, collect alignment and AA info.
   bool Changed = false;
-  for (AliasSet::iterator ASI = AS.begin(), E = AS.end(); ASI != E; ++ASI) {
-    Value *ASIV = ASI->getValue();
+  for (const auto &ASI : AS) {
+    Value *ASIV = ASI.getValue();
     PointerMustAliases.insert(ASIV);
 
     // Check that all of the pointers in the alias set have the same type.  We
@@ -945,15 +945,16 @@ bool llvm::promoteLoopAccessesToScalars(
         // instruction will be executed, update the alignment.
         // Larger is better, with the exception of 0 being the best alignment.
         unsigned InstAlignment = Store->getAlignment();
-        if ((InstAlignment > Alignment || InstAlignment == 0) && Alignment != 0)
+        if ((InstAlignment > Alignment || InstAlignment == 0) &&
+            Alignment != 0) {
           if (isGuaranteedToExecute(*UI, DT, CurLoop, SafetyInfo)) {
             GuaranteedToExecute = true;
             Alignment = InstAlignment;
           }
-
-        if (!GuaranteedToExecute)
+        } else if (!GuaranteedToExecute) {
           GuaranteedToExecute =
               isGuaranteedToExecute(*UI, DT, CurLoop, SafetyInfo);
+        }
 
         if (!GuaranteedToExecute && !CanSpeculateLoad) {
           CanSpeculateLoad = isDereferenceableAndAlignedPointer(

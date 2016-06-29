@@ -1918,16 +1918,39 @@ bool MaskedValueIsZero(Value *V, const APInt &Mask, unsigned Depth,
   return (KnownZero & Mask) == Mask;
 }
 
+/// For vector constants, loop over the elements and find the constant with the
+/// minimum number of sign bits. Return 0 if the value is not a vector constant
+/// or if any element was not analyzed; otherwise, return the count for the
+/// element with the minimum number of sign bits.
+static unsigned computeNumSignBitsVectorConstant(Value *V, unsigned TyBits) {
+  auto *CV = dyn_cast<Constant>(V);
+  if (!CV || !CV->getType()->isVectorTy())
+    return 0;
 
+  unsigned MinSignBits = TyBits;
+  unsigned NumElts = CV->getType()->getVectorNumElements();
+  for (unsigned i = 0; i != NumElts; ++i) {
+    // If we find a non-ConstantInt, bail out.
+    auto *Elt = dyn_cast_or_null<ConstantInt>(CV->getAggregateElement(i));
+    if (!Elt)
+      return 0;
+
+    // If the sign bit is 1, flip the bits, so we always count leading zeros.
+    APInt EltVal = Elt->getValue();
+    if (EltVal.isNegative())
+      EltVal = ~EltVal;
+    MinSignBits = std::min(MinSignBits, EltVal.countLeadingZeros());
+  }
+
+  return MinSignBits;
+}
 
 /// Return the number of times the sign bit of the register is replicated into
 /// the other bits. We know that at least 1 bit is always equal to the sign bit
 /// (itself), but other cases can give us information. For example, immediately
 /// after an "ashr X, 2", we know that the top 3 bits are all equal to each
-/// other, so we return 3.
-///
-/// 'Op' must have a scalar integer type.
-///
+/// other, so we return 3. For vectors, return the number of sign bits for the
+/// vector element with the mininum number of known sign bits.
 unsigned ComputeNumSignBits(Value *V, unsigned Depth, const Query &Q) {
   unsigned TyBits = Q.DL.getTypeSizeInBits(V->getType()->getScalarType());
   unsigned Tmp, Tmp2;
@@ -2123,26 +2146,25 @@ unsigned ComputeNumSignBits(Value *V, unsigned Depth, const Query &Q) {
 
   // Finally, if we can prove that the top bits of the result are 0's or 1's,
   // use this information.
+
+  // If we can examine all elements of a vector constant successfully, we're
+  // done (we can't do any better than that). If not, keep trying.
+  if (unsigned VecSignBits = computeNumSignBitsVectorConstant(V, TyBits))
+    return VecSignBits;
+
   APInt KnownZero(TyBits, 0), KnownOne(TyBits, 0);
-  APInt Mask;
   computeKnownBits(V, KnownZero, KnownOne, Depth, Q);
 
-  if (KnownZero.isNegative()) {        // sign bit is 0
-    Mask = KnownZero;
-  } else if (KnownOne.isNegative()) {  // sign bit is 1;
-    Mask = KnownOne;
-  } else {
-    // Nothing known.
-    return FirstAnswer;
-  }
+  // If we know that the sign bit is either zero or one, determine the number of
+  // identical bits in the top of the input value.
+  if (KnownZero.isNegative())
+    return std::max(FirstAnswer, KnownZero.countLeadingOnes());
 
-  // Okay, we know that the sign bit in Mask is set.  Use CLZ to determine
-  // the number of identical bits in the top of the input value.
-  Mask = ~Mask;
-  Mask <<= Mask.getBitWidth()-TyBits;
-  // Return # leading zeros.  We use 'min' here in case Val was zero before
-  // shifting.  We don't want to return '64' as for an i32 "0".
-  return std::max(FirstAnswer, std::min(TyBits, Mask.countLeadingZeros()));
+  if (KnownOne.isNegative())
+    return std::max(FirstAnswer, KnownOne.countLeadingOnes());
+
+  // computeKnownBits gave us no extra information about the top bits.
+  return FirstAnswer;
 }
 
 /// This function computes the integer multiple of Base that equals V.

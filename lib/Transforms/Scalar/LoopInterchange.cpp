@@ -403,11 +403,9 @@ public:
 
 private:
   void splitInnerLoopLatch(Instruction *);
-  void splitOuterLoopLatch();
   void splitInnerLoopHeader();
   bool adjustLoopLinks();
   void adjustLoopPreheaders();
-  void adjustOuterLoopPreheader();
   bool adjustLoopBranches();
   void updateIncomingBlock(BasicBlock *CurrBlock, BasicBlock *OldPred,
                            BasicBlock *NewPred);
@@ -473,8 +471,7 @@ struct LoopInterchange : public FunctionPass {
   }
 
   bool isComputableLoopNest(LoopVector LoopList) {
-    for (auto I = LoopList.begin(), E = LoopList.end(); I != E; ++I) {
-      Loop *L = *I;
+    for (Loop *L : LoopList) {
       const SCEV *ExitCountOuter = SE->getBackedgeTakenCount(L);
       if (ExitCountOuter == SE->getCouldNotCompute()) {
         DEBUG(dbgs() << "Couldn't compute Backedge count\n");
@@ -814,7 +811,6 @@ bool LoopInterchangeLegality::currentLimitations() {
   //      A[j+1][i+2] = A[j][i]+k;
   //  }
   // }
-  bool FoundInduction = false;
   Instruction *InnerIndexVarInc = nullptr;
   if (InnerInductionVar->getIncomingBlock(0) == InnerLoopPreHeader)
     InnerIndexVarInc =
@@ -830,17 +826,17 @@ bool LoopInterchangeLegality::currentLimitations() {
   // we do not have any instruction between the induction variable and branch
   // instruction.
 
-  for (auto I = InnerLoopLatch->rbegin(), E = InnerLoopLatch->rend();
-       I != E && !FoundInduction; ++I) {
-    if (isa<BranchInst>(*I) || isa<CmpInst>(*I) || isa<TruncInst>(*I))
+  bool FoundInduction = false;
+  for (const Instruction &I : reverse(*InnerLoopLatch)) {
+    if (isa<BranchInst>(I) || isa<CmpInst>(I) || isa<TruncInst>(I))
       continue;
-    const Instruction &Ins = *I;
     // We found an instruction. If this is not induction variable then it is not
     // safe to split this loop latch.
-    if (!Ins.isIdenticalTo(InnerIndexVarInc))
+    if (!I.isIdenticalTo(InnerIndexVarInc))
       return true;
-    else
-      FoundInduction = true;
+
+    FoundInduction = true;
+    break;
   }
   // The loop latch ended and we didn't find the induction variable return as
   // current limitation.
@@ -904,8 +900,7 @@ int LoopInterchangeProfitability::getInstrOrderCost() {
   BadOrder = GoodOrder = 0;
   for (auto BI = InnerLoop->block_begin(), BE = InnerLoop->block_end();
        BI != BE; ++BI) {
-    for (auto I = (*BI)->begin(), E = (*BI)->end(); I != E; ++I) {
-      const Instruction &Ins = *I;
+    for (Instruction &Ins : **BI) {
       if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(&Ins)) {
         unsigned NumOp = GEP->getNumOperands();
         bool FoundInnerInduction = false;
@@ -1074,13 +1069,6 @@ void LoopInterchangeTransform::splitInnerLoopLatch(Instruction *Inc) {
   InnerLoopLatch = SplitBlock(InnerLoopLatchPred, Inc, DT, LI);
 }
 
-void LoopInterchangeTransform::splitOuterLoopLatch() {
-  BasicBlock *OuterLoopLatch = OuterLoop->getLoopLatch();
-  BasicBlock *OuterLatchLcssaPhiBlock = OuterLoopLatch;
-  OuterLoopLatch = SplitBlock(OuterLatchLcssaPhiBlock,
-                              OuterLoopLatch->getFirstNonPHI(), DT, LI);
-}
-
 void LoopInterchangeTransform::splitInnerLoopHeader() {
 
   // Split the inner loop header out. Here make sure that the reduction PHI's
@@ -1103,8 +1091,7 @@ void LoopInterchangeTransform::splitInnerLoopHeader() {
       PHI->replaceAllUsesWith(V);
       PHIVec.push_back((PHI));
     }
-    for (auto I = PHIVec.begin(), E = PHIVec.end(); I != E; ++I) {
-      PHINode *P = *I;
+    for (PHINode *P : PHIVec) {
       P->eraseFromParent();
     }
   } else {
@@ -1123,13 +1110,6 @@ static void moveBBContents(BasicBlock *FromBB, Instruction *InsertBefore) {
 
   ToList.splice(InsertBefore->getIterator(), FromList, FromList.begin(),
                 FromBB->getTerminator()->getIterator());
-}
-
-void LoopInterchangeTransform::adjustOuterLoopPreheader() {
-  BasicBlock *OuterLoopPreHeader = OuterLoop->getLoopPreheader();
-  BasicBlock *InnerPreHeader = InnerLoop->getLoopPreheader();
-
-  moveBBContents(OuterLoopPreHeader, InnerPreHeader->getTerminator());
 }
 
 void LoopInterchangeTransform::updateIncomingBlock(BasicBlock *CurrBlock,
@@ -1228,8 +1208,7 @@ bool LoopInterchangeTransform::adjustLoopBranches() {
     PHINode *LcssaPhi = cast<PHINode>(I);
     LcssaVec.push_back(LcssaPhi);
   }
-  for (auto I = LcssaVec.begin(), E = LcssaVec.end(); I != E; ++I) {
-    PHINode *P = *I;
+  for (PHINode *P : LcssaVec) {
     Value *Incoming = P->getIncomingValueForBlock(InnerLoopLatch);
     P->replaceAllUsesWith(Incoming);
     P->eraseFromParent();

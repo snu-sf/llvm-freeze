@@ -857,10 +857,19 @@ static GlobalVariable *createPrivateGlobalForSourceLoc(Module &M,
   return GV;
 }
 
-static bool GlobalWasGeneratedByAsan(GlobalVariable *G) {
-  return G->getName().startswith(kAsanGenPrefix) ||
-         G->getName().startswith(kSanCovGenPrefix) ||
-         G->getName().startswith(kODRGenPrefix);
+/// \brief Check if \p G has been created by a trusted compiler pass.
+static bool GlobalWasGeneratedByCompiler(GlobalVariable *G) {
+  // Do not instrument asan globals.
+  if (G->getName().startswith(kAsanGenPrefix) ||
+      G->getName().startswith(kSanCovGenPrefix) ||
+      G->getName().startswith(kODRGenPrefix))
+    return true;
+
+  // Do not instrument gcov counter arrays.
+  if (G->getName() == "__llvm_gcov_ctr")
+    return true;
+
+  return false;
 }
 
 Value *AddressSanitizer::memToShadow(Value *Shadow, IRBuilder<> &IRB) {
@@ -1001,9 +1010,9 @@ void AddressSanitizer::instrumentPointerComparisonOrSubtraction(
   IRBuilder<> IRB(I);
   Function *F = isa<ICmpInst>(I) ? AsanPtrCmpFunction : AsanPtrSubFunction;
   Value *Param[2] = {I->getOperand(0), I->getOperand(1)};
-  for (int i = 0; i < 2; i++) {
-    if (Param[i]->getType()->isPointerTy())
-      Param[i] = IRB.CreatePointerCast(Param[i], IntptrTy);
+  for (Value *&i : Param) {
+    if (i->getType()->isPointerTy())
+      i = IRB.CreatePointerCast(i, IntptrTy);
   }
   IRB.CreateCall(F, Param);
 }
@@ -1243,7 +1252,7 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
   if (GlobalsMD.get(G).IsBlacklisted) return false;
   if (!Ty->isSized()) return false;
   if (!G->hasInitializer()) return false;
-  if (GlobalWasGeneratedByAsan(G)) return false;  // Our own global.
+  if (GlobalWasGeneratedByCompiler(G)) return false; // Our own globals.
   // Touch only those globals that will not be defined in other modules.
   // Don't handle ODR linkage types and COMDATs since other modules may be built
   // without ASan.

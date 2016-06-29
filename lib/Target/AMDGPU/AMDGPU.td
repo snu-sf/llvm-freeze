@@ -216,12 +216,6 @@ def FeatureDumpCodeLower : SubtargetFeature <"dumpcode",
   "Dump MachineInstrs in the CodeEmitter"
 >;
 
-def FeatureIRStructurizer : SubtargetFeature <"disable-irstructurizer",
-  "EnableIRStructurizer",
-  "false",
-  "Disable IR Structurizer"
->;
-
 def FeaturePromoteAlloca : SubtargetFeature <"promote-alloca",
   "EnablePromoteAlloca",
   "true",
@@ -333,6 +327,13 @@ def FeatureDebuggerReserveRegs : SubtargetFeature<
   "DebuggerReserveRegs",
   "true",
   "Reserve registers for debugger usage"
+>;
+
+def FeatureDebuggerEmitPrologue : SubtargetFeature<
+  "amdgpu-debugger-emit-prologue",
+  "DebuggerEmitPrologue",
+  "true",
+  "Emit debugger prologue"
 >;
 
 //===----------------------------------------------------------------------===//

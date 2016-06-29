@@ -90,13 +90,6 @@ def SDTBinaryArithWithFlagsInOut : SDTypeProfile<2, 3,
                                              SDTCisVT<1, i32>,
                                              SDTCisVT<4, i32>]>;
 
-def SDT_ARM64bitmlal : SDTypeProfile<2,4, [ SDTCisVT<0, i32>, SDTCisVT<1, i32>,
-                                        SDTCisVT<2, i32>, SDTCisVT<3, i32>,
-                                        SDTCisVT<4, i32>, SDTCisVT<5, i32> ] >;
-def ARMUmlal         : SDNode<"ARMISD::UMLAL", SDT_ARM64bitmlal>;
-def ARMSmlal         : SDNode<"ARMISD::SMLAL", SDT_ARM64bitmlal>;
-def ARMUmaal         : SDNode<"ARMISD::UMAAL", SDT_ARM64bitmlal>;
-
 // Node definitions.
 def ARMWrapper       : SDNode<"ARMISD::Wrapper",     SDTIntUnaryOp>;
 def ARMWrapperPIC    : SDNode<"ARMISD::WrapperPIC",  SDTIntUnaryOp>;
@@ -128,6 +121,8 @@ def ARMintretflag    : SDNode<"ARMISD::INTRET_FLAG", SDT_ARMcall,
                               [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 def ARMcmov          : SDNode<"ARMISD::CMOV", SDT_ARMCMov,
                               [SDNPInGlue]>;
+
+def ARMssatnoshift   : SDNode<"ARMISD::SSAT", SDTIntSatNoShOp, []>;
 
 def ARMbrcond        : SDNode<"ARMISD::BRCOND", SDT_ARMBrcond,
                               [SDNPHasChain, SDNPInGlue, SDNPOutGlue]>;
@@ -321,19 +316,16 @@ def DontUseFusedMAC  : Predicate<"!(TM.Options.AllowFPOpFusion =="
                                  " Subtarget->hasVFP4()) || "
                                  "Subtarget->isTargetDarwin()">;
 
-// VGETLNi32 is microcoded on Swift - prefer VMOV.
-def HasFastVGETLNi32 : Predicate<"!Subtarget->isSwift()">;
-def HasSlowVGETLNi32 : Predicate<"Subtarget->isSwift()">;
+def HasFastVGETLNi32 : Predicate<"!Subtarget->hasSlowVGETLNi32()">;
+def HasSlowVGETLNi32 : Predicate<"Subtarget->hasSlowVGETLNi32()">;
 
-// VDUP.32 is microcoded on Swift - prefer VMOV.
-def HasFastVDUP32 : Predicate<"!Subtarget->isSwift()">;
-def HasSlowVDUP32 : Predicate<"Subtarget->isSwift()">;
+def HasFastVDUP32 : Predicate<"!Subtarget->hasSlowVDUP32()">;
+def HasSlowVDUP32 : Predicate<"Subtarget->hasSlowVDUP32()">;
 
-// Cortex-A9 prefers VMOVSR to VMOVDRR even when using NEON for scalar FP, as
-// this allows more effective execution domain optimization. See
-// setExecutionDomain().
-def UseVMOVSR : Predicate<"Subtarget->isCortexA9() || !Subtarget->useNEONForSinglePrecisionFP()">;
-def DontUseVMOVSR : Predicate<"!Subtarget->isCortexA9() && Subtarget->useNEONForSinglePrecisionFP()">;
+def UseVMOVSR : Predicate<"Subtarget->preferVMOVSR() ||"
+                          "!Subtarget->useNEONForSinglePrecisionFP()">;
+def DontUseVMOVSR : Predicate<"!Subtarget->preferVMOVSR() &&"
+                              "Subtarget->useNEONForSinglePrecisionFP()">;
 
 def IsLE             : Predicate<"MF->getDataLayout().isLittleEndian()">;
 def IsBE             : Predicate<"MF->getDataLayout().isBigEndian()">;
@@ -3716,6 +3708,8 @@ def : ARMV6Pat<(int_arm_ssat GPRnopc:$a, imm1_32:$pos),
                (SSAT imm1_32:$pos, GPRnopc:$a, 0)>;
 def : ARMV6Pat<(int_arm_usat GPRnopc:$a, imm0_31:$pos),
                (USAT imm0_31:$pos, GPRnopc:$a, 0)>;
+def : ARMPat<(ARMssatnoshift GPRnopc:$Rn, imm0_31:$imm),
+             (SSAT imm0_31:$imm, GPRnopc:$Rn, 0)>;
 
 //===----------------------------------------------------------------------===//
 //  Bitwise Instructions.

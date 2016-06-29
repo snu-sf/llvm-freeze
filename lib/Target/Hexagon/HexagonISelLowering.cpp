@@ -17,6 +17,7 @@
 #include "HexagonSubtarget.h"
 #include "HexagonTargetMachine.h"
 #include "HexagonTargetObjectFile.h"
+#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -1057,8 +1058,8 @@ HexagonTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   SDValue AC = DAG.getConstant(A, dl, MVT::i32);
   SDVTList VTs = DAG.getVTList(MVT::i32, MVT::Other);
   SDValue AA = DAG.getNode(HexagonISD::ALLOCA, dl, VTs, Chain, Size, AC);
-  if (Op.getNode()->getHasDebugValue())
-    DAG.TransferDbgValues(Op, AA);
+
+  DAG.ReplaceAllUsesOfValueWith(Op, AA);
   return AA;
 }
 
@@ -1407,15 +1408,15 @@ HexagonTargetLowering::LowerConstantPool(SDValue Op, SelectionDAG &DAG) const {
   EVT ValTy = Op.getValueType();
   ConstantPoolSDNode *CPN = cast<ConstantPoolSDNode>(Op);
   unsigned Align = CPN->getAlignment();
-  Reloc::Model RM = HTM.getRelocationModel();
-  unsigned char TF = (RM == Reloc::PIC_) ? HexagonII::MO_PCREL : 0;
+  bool IsPositionIndependent = isPositionIndependent();
+  unsigned char TF = IsPositionIndependent ? HexagonII::MO_PCREL : 0;
 
   SDValue T;
   if (CPN->isMachineConstantPoolEntry())
     T = DAG.getTargetConstantPool(CPN->getMachineCPVal(), ValTy, Align, TF);
   else
     T = DAG.getTargetConstantPool(CPN->getConstVal(), ValTy, Align, TF);
-  if (RM == Reloc::PIC_)
+  if (IsPositionIndependent)
     return DAG.getNode(HexagonISD::AT_PCREL, SDLoc(Op), ValTy, T);
   return DAG.getNode(HexagonISD::CP, SDLoc(Op), ValTy, T);
 }
@@ -1424,8 +1425,7 @@ SDValue
 HexagonTargetLowering::LowerJumpTable(SDValue Op, SelectionDAG &DAG) const {
   EVT VT = Op.getValueType();
   int Idx = cast<JumpTableSDNode>(Op)->getIndex();
-  Reloc::Model RM = HTM.getRelocationModel();
-  if (RM == Reloc::PIC_) {
+  if (isPositionIndependent()) {
     SDValue T = DAG.getTargetJumpTable(Idx, VT, HexagonII::MO_PCREL);
     return DAG.getNode(HexagonISD::AT_PCREL, SDLoc(Op), VT, T);
   }
@@ -1503,8 +1503,8 @@ HexagonTargetLowering::LowerGLOBALADDRESS(SDValue Op, SelectionDAG &DAG) const {
     return DAG.getNode(HexagonISD::CONST32, dl, PtrVT, GA);
   }
 
-  bool UsePCRel = GV->hasInternalLinkage() || GV->hasHiddenVisibility() ||
-                  (GV->hasLocalLinkage() && !isa<Function>(GV));
+  const Triple &TargetTriple = HTM.getTargetTriple();
+  bool UsePCRel = shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV);
   if (UsePCRel) {
     SDValue GA = DAG.getTargetGlobalAddress(GV, dl, PtrVT, Offset,
                                             HexagonII::MO_PCREL);
@@ -1592,9 +1592,9 @@ HexagonTargetLowering::LowerToTLSInitialExecModel(GlobalAddressSDNode *GA,
   // Get the thread pointer.
   SDValue TP = DAG.getCopyFromReg(DAG.getEntryNode(), dl, Hexagon::UGP, PtrVT);
 
-  Reloc::Model RM = HTM.getRelocationModel();
-  unsigned char TF = (RM == Reloc::PIC_) ? HexagonII::MO_IEGOT
-                                         : HexagonII::MO_IE;
+  bool IsPositionIndependent = isPositionIndependent();
+  unsigned char TF =
+      IsPositionIndependent ? HexagonII::MO_IEGOT : HexagonII::MO_IE;
 
   // First generate the TLS symbol address
   SDValue TGA = DAG.getTargetGlobalAddress(GA->getGlobal(), dl, PtrVT,
@@ -1602,7 +1602,7 @@ HexagonTargetLowering::LowerToTLSInitialExecModel(GlobalAddressSDNode *GA,
 
   SDValue Sym = DAG.getNode(HexagonISD::CONST32, dl, PtrVT, TGA);
 
-  if (RM == Reloc::PIC_) {
+  if (IsPositionIndependent) {
     // Generate the GOT pointer in case of position independent code
     SDValue GOT = LowerGLOBAL_OFFSET_TABLE(Sym, DAG);
 
@@ -1714,6 +1714,9 @@ HexagonTargetLowering::HexagonTargetLowering(const TargetMachine &TM,
   setPrefFunctionAlignment(4);
   setMinFunctionAlignment(2);
   setStackPointerRegisterToSaveRestore(HRI.getStackRegister());
+
+  setMaxAtomicSizeInBitsSupported(64);
+  setMinCmpXchgSizeInBits(32);
 
   if (EnableHexSDNodeSched)
     setSchedulingPreference(Sched::VLIW);
@@ -3120,4 +3123,11 @@ HexagonTargetLowering::shouldExpandAtomicLoadInIR(LoadInst *LI) const {
 bool HexagonTargetLowering::shouldExpandAtomicStoreInIR(StoreInst *SI) const {
   // Do not expand loads and stores that don't exceed 64 bits.
   return SI->getValueOperand()->getType()->getPrimitiveSizeInBits() > 64;
+}
+
+bool HexagonTargetLowering::shouldExpandAtomicCmpXchgInIR(
+      AtomicCmpXchgInst *AI) const {
+  const DataLayout &DL = AI->getModule()->getDataLayout();
+  unsigned Size = DL.getTypeStoreSize(AI->getCompareOperand()->getType());
+  return Size >= 4 && Size <= 8;
 }

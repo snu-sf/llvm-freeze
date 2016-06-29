@@ -44,6 +44,10 @@ const char *TargetLowering::getTargetNodeName(unsigned Opcode) const {
   return nullptr;
 }
 
+bool TargetLowering::isPositionIndependent() const {
+  return getTargetMachine().getRelocationModel() == Reloc::PIC_;
+}
+
 /// Check whether a given call node is in tail position within its function. If
 /// so, it sets Chain to the input chain of the tail call.
 bool TargetLowering::isInTailCallPosition(SelectionDAG &DAG, SDNode *Node,
@@ -136,7 +140,7 @@ TargetLowering::makeLibCall(SelectionDAG &DAG, RTLIB::Libcall LC, EVT RetVT,
   TargetLowering::CallLoweringInfo CLI(DAG);
   bool signExtend = shouldSignExtendTypeInLibCall(RetVT, isSigned);
   CLI.setDebugLoc(dl).setChain(DAG.getEntryNode())
-    .setCallee(getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
+    .setCallee(getLibcallCallingConv(LC), RetTy, Callee, std::move(Args))
     .setNoReturn(doesNotReturn).setDiscardResult(!isReturnValueUsed)
     .setSExtResult(signExtend).setZExtResult(!signExtend);
   return LowerCallTo(CLI);
@@ -277,7 +281,7 @@ void TargetLowering::softenSetCCOperands(SelectionDAG &DAG, EVT VT,
 /// returned value is a member of the MachineJumpTableInfo::JTEntryKind enum.
 unsigned TargetLowering::getJumpTableEncoding() const {
   // In non-pic modes, just use the address of a block.
-  if (getTargetMachine().getRelocationModel() != Reloc::PIC_)
+  if (!isPositionIndependent())
     return MachineJumpTableInfo::EK_BlockAddress;
 
   // In PIC mode, if the target supports a GPRel32 directive, use it.
@@ -311,17 +315,22 @@ TargetLowering::getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
 
 bool
 TargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
-  // Assume that everything is safe in static mode.
-  if (getTargetMachine().getRelocationModel() == Reloc::Static)
-    return true;
+  const TargetMachine &TM = getTargetMachine();
+  Reloc::Model RM = TM.getRelocationModel();
+  const GlobalValue *GV = GA->getGlobal();
+  const Triple &TargetTriple = TM.getTargetTriple();
 
-  // In dynamic-no-pic mode, assume that known defined values are safe.
-  if (getTargetMachine().getRelocationModel() == Reloc::DynamicNoPIC &&
-      GA && GA->getGlobal()->isStrongDefinitionForLinker())
-    return true;
+  // If the address is not even local to this DSO we will have to load it from
+  // a got and then add the offset.
+  if (!shouldAssumeDSOLocal(RM, TargetTriple, *GV->getParent(), GV))
+    return false;
 
-  // Otherwise assume nothing is safe.
-  return false;
+  // If the code is position independent we will have to add a base register.
+  if (isPositionIndependent())
+    return false;
+
+  // Otherwise we can do it.
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -3551,7 +3560,7 @@ SDValue TargetLowering::LowerToTLSEmulatedModel(const GlobalAddressSDNode *GA,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(DAG.getEntryNode());
-  CLI.setCallee(CallingConv::C, VoidPtrType, EmuTlsGetAddr, std::move(Args), 0);
+  CLI.setCallee(CallingConv::C, VoidPtrType, EmuTlsGetAddr, std::move(Args));
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
 
   // TLSADDR will be codegen'ed as call. Inform MFI that function has calls.
