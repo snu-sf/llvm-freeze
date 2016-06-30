@@ -811,17 +811,30 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
 }
 
 // Freeze the hoisted branch condition
-void FreezeCond(Value* &cond) {
-  // freeze: Insert freeze when cond is an instruction.
+void FreezeCond(Value *&cond, BasicBlock *BB, TerminatorInst *TI) {
+  assert(!isa<Constant>(cond) && "Constants are not unswitched");
+  // Check whether freezing is not required
+  if (FreezeInst::isGuaranteedNotToBeUndef(cond))
+    return;
+  
+  // Insert freeze when cond is an instruction.
   if (Instruction *condInst = dyn_cast<Instruction>(cond)) {
-    Instruction *insertPt = &*(++condInst->getIterator());
-    FreezeInst *freezeInst = new FreezeInst(condInst, condInst->getName() + ".fr", insertPt);
+    FreezeInst *FI = new FreezeInst(condInst, condInst->getName() + ".fr");
+    FI->insertAfter(condInst);
 
-    condInst->replaceAllUsesWith(freezeInst);
-    freezeInst->replaceUsesOfWith(freezeInst, condInst);
+    condInst->replaceAllUsesWith(FI);
+    FI->replaceUsesOfWith(FI, condInst);
+    
+    cond = FI;
+  } else if (Argument *condArg = dyn_cast<Argument>(cond)) {
+    BasicBlock &Entry = BB->getParent()->getEntryBlock();
+    FreezeInst *FI = new FreezeInst(condArg, condArg->getName() + ".fr", &*Entry.getFirstInsertionPt());
 
-    cond = freezeInst;
+    condArg->replaceAllUsesWith(FI);
+    
+    cond = FI;
   }
+
 }
 
 /// Given a loop that has a trivial unswitchable condition in it (a cond branch
@@ -855,7 +868,7 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
   BasicBlock *NewExit = SplitBlock(ExitBlock, &ExitBlock->front(), DT, LI);
 
   // freeze
-  FreezeCond(Cond);
+  FreezeCond(Cond, loopPreheader, TI);
 
   // Okay, now we have a position to branch from and a position to branch to,
   // insert the new conditional branch.
@@ -1163,7 +1176,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   // Emit the new branch that selects between the two versions of this loop.
 
   // freeze
-  FreezeCond(LIC);
+  FreezeCond(LIC, loopPreheader, TI);
   
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR,
                                  TI);
