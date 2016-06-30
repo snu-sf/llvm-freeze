@@ -5091,6 +5091,9 @@ public:
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
+
+  // \brief Checks whether the value never becomes undef
+  static bool isGuaranteedNotToBeUndef(Value *V);
 };
 } // end namespace llvm
 

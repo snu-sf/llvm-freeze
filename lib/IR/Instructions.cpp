@@ -4015,3 +4015,44 @@ UnreachableInst *UnreachableInst::cloneImpl() const {
 FreezeInst *FreezeInst::cloneImpl() const {
   return new FreezeInst(getOperand(0));
 }
+
+bool FreezeInst::isGuaranteedNotToBeUndef(Value *V) {
+  if (Instruction *I = dyn_cast<Instruction>(V)) {
+    if (isa<FreezeInst>(I))
+      return true;
+
+    // cmp, phi, select unary?
+    if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
+      return (isGuaranteedNotToBeUndef(IC->getOperand(0)) &&
+              isGuaranteedNotToBeUndef(IC->getOperand(1)));
+    }
+    if (FCmpInst *FC = dyn_cast<FCmpInst>(I)) {
+      return (isGuaranteedNotToBeUndef(FC->getOperand(0)) &&
+              isGuaranteedNotToBeUndef(FC->getOperand(1)));
+    }
+    if (PHINode *PN = dyn_cast<PHINode>(I)) {
+      bool flag = true;
+      for (Value *InVal : PN->incoming_values())
+        flag &= isGuaranteedNotToBeUndef(InVal);
+
+      return flag;
+    }
+    if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+      return (isGuaranteedNotToBeUndef(SI->getOperand(0)) &&
+              isGuaranteedNotToBeUndef(SI->getOperand(1)) &&
+              isGuaranteedNotToBeUndef(SI->getOperand(2)));
+    }
+
+    return false;
+  }
+  if (Constant *C = dyn_cast<Constant>(V)) {
+    if (isa<ConstantInt>(C) || isa<ConstantFP>(C) ||
+        isa<ConstantPointerNull>(C) || isa<GlobalVariable>(C))
+      return true;
+
+    return false;
+  }
+
+  // return false for others such as Arguments
+  return false;
+}
