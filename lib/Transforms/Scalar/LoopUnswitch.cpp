@@ -811,7 +811,7 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
 }
 
 // Freeze the hoisted branch condition
-void FreezeCond(Value *&cond, BasicBlock *BB, TerminatorInst *TI) {
+void FreezeCond(Value *&cond, BasicBlock *BB) {
   assert(!isa<Constant>(cond) && "Constants are not unswitched");
   // Check whether freezing is not required
   if (FreezeInst::isGuaranteedNotToBeUndef(cond))
@@ -867,8 +867,8 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
   assert(!L->contains(ExitBlock) && "Exit block is in the loop?");
   BasicBlock *NewExit = SplitBlock(ExitBlock, &ExitBlock->front(), DT, LI);
 
-  // freeze
-  FreezeCond(Cond, loopPreheader, TI);
+  // Freeze
+  FreezeCond(Cond, loopPreheader);
 
   // Okay, now we have a position to branch from and a position to branch to,
   // insert the new conditional branch.
@@ -1175,8 +1175,8 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
 
   // Emit the new branch that selects between the two versions of this loop.
 
-  // freeze
-  FreezeCond(LIC, loopPreheader, TI);
+  // Freeze
+  FreezeCond(LIC, loopPreheader);
   
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR,
                                  TI);

@@ -4021,7 +4021,6 @@ bool FreezeInst::isGuaranteedNotToBeUndef(Value *V) {
     if (isa<FreezeInst>(I))
       return true;
 
-    // cmp, phi, select unary?
     if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
       return (isGuaranteedNotToBeUndef(IC->getOperand(0)) &&
               isGuaranteedNotToBeUndef(IC->getOperand(1)));
@@ -4038,6 +4037,8 @@ bool FreezeInst::isGuaranteedNotToBeUndef(Value *V) {
       return flag;
     }
     if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+      // This depends on the choice for the semantics of select
+      // For now we check that the condition is not undef
       return (isGuaranteedNotToBeUndef(SI->getOperand(0)) &&
               isGuaranteedNotToBeUndef(SI->getOperand(1)) &&
               isGuaranteedNotToBeUndef(SI->getOperand(2)));
@@ -4047,7 +4048,7 @@ bool FreezeInst::isGuaranteedNotToBeUndef(Value *V) {
   }
   if (Constant *C = dyn_cast<Constant>(V)) {
     if (isa<ConstantInt>(C) || isa<ConstantFP>(C) ||
-        isa<ConstantPointerNull>(C) || isa<GlobalVariable>(C))
+        isa<ConstantPointerNull>(C) || isa<GlobalObject>(C))
       return true;
 
     return false;
