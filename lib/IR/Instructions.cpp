@@ -4021,27 +4021,19 @@ bool FreezeInst::isGuaranteedNotToBeUndef(Value *V) {
     if (isa<FreezeInst>(I))
       return true;
 
+    // We are currently conservative. Handle each case later.
+    // For now we don't use recursive calls because of circular definitions.
     if (ICmpInst *IC = dyn_cast<ICmpInst>(I)) {
-      return (isGuaranteedNotToBeUndef(IC->getOperand(0)) &&
-              isGuaranteedNotToBeUndef(IC->getOperand(1)));
+      return false;
     }
     if (FCmpInst *FC = dyn_cast<FCmpInst>(I)) {
-      return (isGuaranteedNotToBeUndef(FC->getOperand(0)) &&
-              isGuaranteedNotToBeUndef(FC->getOperand(1)));
+      return false;
     }
     if (PHINode *PN = dyn_cast<PHINode>(I)) {
-      bool flag = true;
-      for (Value *InVal : PN->incoming_values())
-        flag &= isGuaranteedNotToBeUndef(InVal);
-
-      return flag;
+      return false;
     }
     if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
-      // This depends on the choice for the semantics of select
-      // For now we check that the condition is not undef
-      return (isGuaranteedNotToBeUndef(SI->getOperand(0)) &&
-              isGuaranteedNotToBeUndef(SI->getOperand(1)) &&
-              isGuaranteedNotToBeUndef(SI->getOperand(2)));
+      return false;
     }
 
     return false;
