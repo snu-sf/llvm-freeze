@@ -544,6 +544,9 @@ private:
   void visitAllocaInst    (Instruction &I) { markOverdefined(&I); }
   void visitVAArgInst     (Instruction &I) { markAnythingOverdefined(&I); }
 
+  // Don't handle freeze instructions for now.
+  void visitFreezeInst    (FreezeInst &I) { markAnythingOverdefined(&I); }
+
   void visitInstruction(Instruction &I) {
     // If a new instruction is added to LLVM that we don't handle.
     DEBUG(dbgs() << "SCCP: Don't know how to handle: " << I << '\n');
