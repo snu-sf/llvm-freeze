@@ -819,7 +819,11 @@ void FreezeCond(Value *&cond, BasicBlock *BB) {
   // Insert freeze when cond is an instruction.
   if (Instruction *condInst = dyn_cast<Instruction>(cond)) {
     FreezeInst *FI = new FreezeInst(condInst, condInst->getName() + ".fr");
-    FI->insertAfter(condInst);
+    BasicBlock *BB = condInst->getParent();
+    if (isa<PHINode>(condInst))
+      BB->getInstList().insert(BB->getFirstInsertionPt(), FI);
+    else
+      FI->insertAfter(condInst);
 
     condInst->replaceAllUsesWith(FI);
     FI->replaceUsesOfWith(FI, condInst);
@@ -830,6 +834,7 @@ void FreezeCond(Value *&cond, BasicBlock *BB) {
     FreezeInst *FI = new FreezeInst(condArg, condArg->getName() + ".fr", &*Entry.getFirstInsertionPt());
 
     condArg->replaceAllUsesWith(FI);
+    FI->replaceUsesOfWith(FI, condArg);
     
     cond = FI;
   }
