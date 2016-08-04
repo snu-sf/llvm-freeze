@@ -3652,8 +3652,8 @@ void Verifier::visitCleanupReturnInst(CleanupReturnInst &CRI) {
 }
 
 void Verifier::visitFreezeInst(FreezeInst &FI) {
-  Assert(!FI.getOperand(0)->getType()->isVoidTy(),
-         "Cannot freeze void type!", &FI);
+  Assert(FI.getOperand(0)->getType()->isIntegerTy(),
+         "Cannot freeze non-integer type!", &FI);
 
   visitInstruction(FI);
 }
