@@ -4947,6 +4947,15 @@ public:
     BasicBlock *InsertAtEnd       ///< The block to insert the instruction into
   );
 
+  /// isValidOperand - Return true if a freeze instruction can be
+  /// formed with the specified operand.
+  static bool isValidOperand(const Value *S);
+
+  static FreezeInst *Create(Value *S, const Twine &NameStr = "",
+                            Instruction *InsertBefore = nullptr) {
+    return new FreezeInst(S, NameStr, InsertBefore);
+  }
+
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const Instruction *I) {
     return I->getOpcode() == Freeze;

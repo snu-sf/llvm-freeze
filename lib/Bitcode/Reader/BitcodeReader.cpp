@@ -3206,6 +3206,17 @@ std::error_code BitcodeReader::parseConstants() {
         V = ConstantExpr::getICmp(Record[3], Op0, Op1);
       break;
     }
+    case bitc::CST_CODE_CE_FREEZE: {    // CE_FREEZE: [opty, opval]
+      if (Record.size() != 2)
+        return error("Invalid record");
+      Type *OpTy = getTypeByID(Record[0]);
+      if (!OpTy)
+        return error("Invalid record");
+      Constant *Op0 = ValueList.getConstantFwdRef(Record[1], OpTy);
+
+      V = ConstantExpr::getFreeze(Op0);
+      break;
+    }
     // This maintains backward compatibility, pre-asm dialect keywords.
     // FIXME: Remove with the 4.0 release.
     case bitc::CST_CODE_INLINEASM_OLD: {

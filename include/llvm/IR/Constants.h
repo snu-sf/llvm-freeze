@@ -916,6 +916,7 @@ public:
                               bool OnlyIfReduced = false);
   static Constant *getAddrSpaceCast(Constant *C, Type *Ty,
                                     bool OnlyIfReduced = false);
+  static Constant *getFreeze(Constant *C);
 
   static Constant *getNSWNeg(Constant *C) { return getNeg(C, false, true); }
   static Constant *getNUWNeg(Constant *C) { return getNeg(C, true, false); }

@@ -534,6 +534,8 @@ struct ConstantExprKeyType {
     case Instruction::FCmp:
       return new CompareConstantExpr(Ty, Instruction::FCmp, SubclassData,
                                      Ops[0], Ops[1]);
+    case Instruction::Freeze:
+      return new UnaryConstantExpr(Opcode, Ops[0], Ty);
     }
   }
 };
