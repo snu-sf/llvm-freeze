@@ -995,8 +995,11 @@ Constant *llvm::ConstantFoldInstruction(Instruction *I, const DataLayout &DL,
   for (User::op_iterator i = I->op_begin(), e = I->op_end(); i != e; ++i) {
     Constant *Op = cast<Constant>(*i);
     // Fold the Instruction's operands.
-    if (ConstantExpr *NewCE = dyn_cast<ConstantExpr>(Op))
-      Op = ConstantFoldConstantExpression(NewCE, DL, TLI);
+    if (ConstantExpr *NewCE = dyn_cast<ConstantExpr>(Op)) {
+      Constant *NewOp = ConstantFoldConstantExpression(NewCE, DL, TLI);
+      if (NewOp != nullptr)
+        Op = NewOp;
+    }
 
     Ops.push_back(Op);
   }
