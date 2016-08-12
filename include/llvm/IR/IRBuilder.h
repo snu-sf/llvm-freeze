@@ -1710,6 +1710,38 @@ public:
                         Name);
   }
 
+  /// \brief If \p Arg is guaranteed not to be undef, return \p Arg.
+  /// Otherwise, insert a freeze instruction at the definition of \p Arg and return 
+  /// the new value
+  Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "") {
+    if (FreezeInst::isGuaranteedNotToBeUndef(Arg))
+      return Arg;
+    
+    if (Instruction *I = dyn_cast<Instruction>(Arg)) {
+      FreezeInst *FI = new FreezeInst(I, Name);
+      BasicBlock *BB = I->getParent();
+      if (isa<PHINode>(I)) {
+        BB->getInstList().insert(BB->getFirstInsertionPt(), FI);
+      } else {
+        FI->insertAfter(I);
+      }
+      I->replaceAllUsesWith(FI);
+      FI->replaceUsesOfWith(FI, I);
+      return FI;
+    } else if (isa<Constant>(Arg) || isa<Argument>(Arg)) {
+      BasicBlock &Entry = F->getEntryBlock();
+      FreezeInst *FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
+      
+      Arg->replaceAllUsesWith(FI);
+      FI->replaceUsesOfWith(FI, Arg);
+      return FI;
+    }
+    
+    assert((isa<PHINode>(Arg) || isa<Constant>(Arg) || isa<Argument>(Arg)) &&
+        "Cannot freeze the value");
+    return nullptr;
+  }
+
   /// \brief Return the i64 difference between two pointer values, dividing out
   /// the size of the pointed-to objects.
   ///
