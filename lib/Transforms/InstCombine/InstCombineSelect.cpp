@@ -205,11 +205,17 @@ Instruction *InstCombiner::foldSelectOpOp(SelectInst &SI, Instruction *TI,
   // X = udiv A, B           | 
   // Y = udiv A, C           | t' = select undef, B, C (which is undef)
   // Z = select undef, X, Y  | Z = udiv A, t' (which is UB)
-  // NOTE : We don't have to freeze the value if the opcode is neither 
-  // div nor rem.
-  Value *FreezedValue = Builder->CreateFreezeAtDef(SI.getCondition(),
+  Value *Cond = SI.getCondition();
+  switch (TI->getOpcode()) {
+  default : break;
+  case Instruction::UDiv:
+  case Instruction::URem:
+  case Instruction::SDiv:
+  case Instruction::SRem:
+    Cond = Builder->CreateFreezeAtDef(SI.getCondition(),
                                        SI.getParent()->getParent());
-  Value *NewSI = Builder->CreateSelect(FreezedValue, OtherOpT,
+  }
+  Value *NewSI = Builder->CreateSelect(Cond, OtherOpT,
                                        OtherOpF, SI.getName()+".v");
 
   if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TI)) {
