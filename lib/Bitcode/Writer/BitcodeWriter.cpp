@@ -2136,6 +2136,10 @@ void ModuleBitcodeWriter::writeConstants(unsigned FirstVal, unsigned LastVal,
           Record.push_back(VE.getTypeID(C->getOperand(0)->getType()));
           Record.push_back(VE.getValueID(C->getOperand(0)));
           AbbrevToUse = CONSTANTS_CE_CAST_Abbrev;
+        } else if (CE->getOpcode() == Instruction::Freeze) {
+          Code = bitc::CST_CODE_CE_FREEZE;
+          Record.push_back(VE.getTypeID(C->getOperand(0)->getType()));
+          Record.push_back(VE.getValueID(C->getOperand(0)));
         } else {
           assert(CE->getNumOperands() == 2 && "Unknown constant expr!");
           Code = bitc::CST_CODE_CE_BINOP;

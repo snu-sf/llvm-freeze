@@ -1730,6 +1730,20 @@ Constant *ConstantExpr::getAddrSpaceCast(Constant *C, Type *DstTy,
   return getFoldedCast(Instruction::AddrSpaceCast, C, DstTy, OnlyIfReduced);
 }
 
+Constant *ConstantExpr::getFreeze(Constant *C) {
+  assert(FreezeInst::isValidOperand(C) &&
+         "Invalid constantexpr freeze!");
+
+  if (Constant *SC = ConstantFoldFreezeInstruction(C))
+    return SC;        // Fold common cases
+
+  Constant *ArgVec[] = { C };
+  ConstantExprKeyType Key(Instruction::Freeze, ArgVec);
+
+  LLVMContextImpl *pImpl = C->getContext().pImpl;
+  return pImpl->ExprConstants.getOrCreate(C->getType(), Key);
+}
+
 Constant *ConstantExpr::get(unsigned Opcode, Constant *C1, Constant *C2,
                             unsigned Flags, Type *OnlyIfReducedTy) {
   // Check the operands for consistency first.
@@ -2891,6 +2905,8 @@ Instruction *ConstantExpr::getAsInstruction() {
   case Instruction::FCmp:
     return CmpInst::Create((Instruction::OtherOps)getOpcode(),
                            (CmpInst::Predicate)getPredicate(), Ops[0], Ops[1]);
+  case Instruction::Freeze:
+    return FreezeInst::Create(Ops[0]);
 
   default:
     assert(getNumOperands() == 2 && "Must be binary operator?");

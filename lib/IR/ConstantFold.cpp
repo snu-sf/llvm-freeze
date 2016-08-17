@@ -2267,3 +2267,8 @@ Constant *llvm::ConstantFoldGetElementPtr(Type *Ty, Constant *C,
                                           ArrayRef<Value *> Idxs) {
   return ConstantFoldGetElementPtrImpl(Ty, C, inBounds, Idxs);
 }
+
+Constant *llvm::ConstantFoldFreezeInstruction(Constant *C) {
+  // At this point we do not fold freeze instruction..
+  return nullptr; 
+}

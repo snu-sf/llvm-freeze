@@ -3861,13 +3861,19 @@ void IndirectBrInst::setSuccessorV(unsigned idx, BasicBlock *B) {
 FreezeInst::FreezeInst(Value *S,
                        const Twine &Name, Instruction *InsertBefore)
     : UnaryInstruction(S->getType(), Freeze, S, InsertBefore) {
+  assert(isValidOperand(S) && "Invalid freeze instruction operand!");
   setName(Name);
 }
 
 FreezeInst::FreezeInst(Value *S,
                        const Twine &Name, BasicBlock *InsertAtEnd)
     : UnaryInstruction(S->getType(), Freeze, S, InsertAtEnd) {
+  assert(isValidOperand(S) && "Invalid freeze instruction operand!");
   setName(Name);
+}
+
+bool FreezeInst::isValidOperand(const Value *S) {
+  return S->getType()->isIntegerTy();
 }
 
 //===----------------------------------------------------------------------===//

@@ -2945,6 +2945,20 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
     ID.Kind = ValID::t_Constant;
     return false;
   }
+  case lltok::kw_freeze: {
+    Constant *SrcVal;
+    Lex.Lex();
+    if (ParseToken(lltok::lparen, "expected '(' after constantexpr freeze") ||
+        ParseGlobalTypeAndValue(SrcVal) ||
+        ParseToken(lltok::rparen, "expected ')' at end of constantexpr freeze"))
+      return true;
+    if (!FreezeInst::isValidOperand(SrcVal))
+      return Error(ID.Loc, "invalid freeze operand type '" + 
+                   getTypeString(SrcVal->getType()));
+    ID.ConstantVal = ConstantExpr::getFreeze(SrcVal);
+    ID.Kind = ValID::t_Constant;
+    return false;
+  }
   case lltok::kw_extractvalue: {
     Lex.Lex();
     Constant *Val;

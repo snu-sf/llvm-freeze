@@ -50,6 +50,7 @@ template <typename T> class ArrayRef;
                                       ArrayRef<Constant *> Idxs);
   Constant *ConstantFoldGetElementPtr(Type *Ty, Constant *C, bool inBounds,
                                       ArrayRef<Value *> Idxs);
+  Constant *ConstantFoldFreezeInstruction(Constant *C);
 } // End llvm namespace
 
 #endif

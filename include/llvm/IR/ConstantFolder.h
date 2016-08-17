@@ -215,6 +215,10 @@ public:
     return ConstantExpr::getSelect(C, True, False);
   }
 
+  Constant *CreateFreeze(Constant *C) const {
+    return ConstantExpr::getFreeze(C);
+  }
+
   Constant *CreateExtractElement(Constant *Vec, Constant *Idx) const {
     return ConstantExpr::getExtractElement(Vec, Idx);
   }
