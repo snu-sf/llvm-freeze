@@ -199,7 +199,22 @@ Instruction *InstCombiner::FoldSelectOpOp(SelectInst &SI, Instruction *TI,
   }
 
   // If we reach here, they do have operations in common.
-  Value *NewSI = Builder->CreateSelect(SI.getCondition(), OtherOpT,
+  // Freeze the condition value to prevent this case : 
+  //   <src>                 |      <tgt>
+  // X = udiv A, B           | 
+  // Y = udiv A, C           | t' = select undef, B, C (which is undef)
+  // Z = select undef, X, Y  | Z = udiv A, t' (which is UB)
+  Value *Cond = SI.getCondition();
+  switch (TI->getOpcode()) {
+  default : break;
+  case Instruction::UDiv:
+  case Instruction::URem:
+  case Instruction::SDiv:
+  case Instruction::SRem:
+    Cond = Builder->CreateFreezeAtDef(SI.getCondition(),
+                                       SI.getParent()->getParent());
+  }
+  Value *NewSI = Builder->CreateSelect(Cond, OtherOpT,
                                        OtherOpF, SI.getName()+".v");
 
   if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TI)) {
