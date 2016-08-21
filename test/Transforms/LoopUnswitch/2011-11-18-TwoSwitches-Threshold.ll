@@ -7,7 +7,8 @@
 
 ; ModuleID = '../llvm/test/Transforms/LoopUnswitch/2011-11-18-TwoSwitches.ll'
 
-; CHECK:        %1 = icmp eq i32 %c, 1
+; CHECK:        %c.fr = freeze i32 %c
+; CHECK:        %1 = icmp eq i32 %c.fr, 1
 ; CHECK-NEXT:   br i1 %1, label %.split.us, label %..split_crit_edge
 
 ; CHECK:      ..split_crit_edge:                                ; preds = %0
@@ -33,7 +34,7 @@
 ; CHECK-NEXT:   br label %loop_begin
 
 ; CHECK:      loop_begin:                                       ; preds = %loop_begin.backedge, %.split
-; CHECK:        switch i32 %c, label %second_switch [
+; CHECK:        switch i32 %c.fr, label %second_switch [
 ; CHECK-NEXT:     i32 1, label %loop_begin.inc_crit_edge
 ; CHECK-NEXT:   ]
 

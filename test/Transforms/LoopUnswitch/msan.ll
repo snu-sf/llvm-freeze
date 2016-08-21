@@ -122,7 +122,8 @@ define void @must_execute(i1 zeroext %x, i32 %p, i32 %q) sanitize_memory {
 entry:
 ; CHECK:       %[[Y:.*]] = load i64, i64* @y, align 8
 ; CHECK-NEXT:  %[[YB:.*]] = icmp eq i64 %[[Y]], 0
-; CHECK-NEXT:  br i1 %[[YB]],
+; CHECK-NEXT:  %[[YBF:.*]] = freeze i1 %[[YB]]
+; CHECK-NEXT:  br i1 %[[YBF]],
 
   %x2 = alloca i8, align 1
   %frombool1 = zext i1 %x to i8
