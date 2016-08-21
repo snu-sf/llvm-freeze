@@ -1276,6 +1276,7 @@ define i32 @PR27137(i32 %a) {
   %s1 = select i1 %c1, i32 %s0, i32 -1
   ret i32 %s1
 }
+<<<<<<< HEAD
 
 define i32 @select_icmp_slt0_xor(i32 %x) {
 ; CHECK-LABEL: @select_icmp_slt0_xor(
@@ -1332,3 +1333,60 @@ define <4 x i32> @cannot_canonicalize_to_shuffle2(<4 x i32> %a, <4 x i32> %b) {
   ret <4 x i32> %sel
 }
 
+||||||| parent of fe007d7... Modify following files in test. They failed in `make check-llvm` due to the newly inserted freeze instructions.
+=======
+
+define i32 @test_foldselectopop_freeze(i32 %x, i32 %x2, i32 %x3, i1 %condorg, i1 %condorg2) {
+; CHECK-LABEL: @test_foldselectopop_freeze(
+; CHECK: %cond.fr = freeze i1 %cond
+; CHECK-NEXT: %tt = zext i1 %cond.fr to i32
+; CHECK-NEXT: %z.v = select i1 %cond.fr, i32 %x2, i32 %x3
+  %cond = or i1 %condorg, %condorg2
+  %tt = zext i1 %cond to i32
+  %y1 = udiv i32 %x, %x2
+  %y2 = udiv i32 %x, %x3
+  %z = select i1 %cond, i32 %y1, i32 %y2
+  %ttt = add i32 %tt, %z
+  ret i32 %ttt
+}
+
+@t1 = external global i32, align 4
+
+define i32 @test_foldselectopop_freeze2(i32 %x, i32 %x2, i32 %x3) {
+; CHECK-LABEL: @test_foldselectopop_freeze2(
+; CHECK: %.fr = freeze i1 icmp eq (i32 ptrtoint (i32* @t1 to i32), i32 305419896)
+; CHECK-NEXT: %z.v = select i1 %.fr, i32 %x2, i32 %x3
+; CHECK-NEXT: %z = udiv i32 %x, %z.v
+; CHECK-NEXT: %ttt = add i32 %z, zext (i1 icmp eq (i32 ptrtoint (i32* @t1 to i32), i32 305419896) to i32)
+  %y1 = udiv i32 %x, %x2
+  %y2 = udiv i32 %x, %x3
+  %z = select i1 icmp eq (i32 ptrtoint (i32* @t1 to i32), i32 305419896), i32 %y1, i32 %y2
+  %tt = zext i1 icmp eq (i32 ptrtoint (i32* @t1 to i32), i32 305419896) to i32
+  %ttt = add i32 %tt, %z
+  ret i32 %ttt
+}
+
+define i32 @test_foldselectopop_freeze3(i32 %x, i32 %x2, i32 %x3, i1 %cond) {
+; CHECK-LABEL: @test_foldselectopop_freeze3(
+; CHECK: %cond.fr = freeze i1 %cond
+; CHECK-NEXT: %z.v = select i1 %cond.fr, i32 %x2, i32 %x3
+; CHECK-NEXT: %z = udiv i32 %x, %z.v
+; CHECK-NEXT: %tt = zext i1 %cond.fr to i32
+  %y1 = udiv i32 %x, %x2
+  %y2 = udiv i32 %x, %x3
+  %z = select i1 %cond, i32 %y1, i32 %y2
+  %tt = zext i1 %cond to i32
+  %ttt = add i32 %tt, %z
+  ret i32 %ttt
+}
+
+define i32 @test_foldselectopop_freeze4(i32 %x, i32 %x2, i32 %x3, i1 %cond) {
+; CHECK-LABEL: @test_foldselectopop_freeze4(
+; CHECK: %z.v = select i1 %cond, i32 %x2, i32 %x3
+; CHECK-NEXT: %z = add i32 %z.v, %x
+  %y1 = add i32 %x, %x2
+  %y2 = add i32 %x, %x3
+  %z = select i1 %cond, i32 %y1, i32 %y2
+  ret i32 %z
+}
+>>>>>>> fe007d7... Modify following files in test. They failed in `make check-llvm` due to the newly inserted freeze instructions.

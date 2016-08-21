@@ -13,10 +13,12 @@
 
 ; CHECK-LABEL: @func_16(
 ; CHECK-NEXT: entry:
-; CHECK-NEXT: br i1 %a, label %entry.split, label %abort0.split
+; CHECK-NEXT: %b.fr = freeze i1 %b
+; CHECK-NEXT: %a.fr = freeze i1 %a
+; CHECK-NEXT: br i1 %a.fr, label %entry.split, label %abort0.split
 
 ; CHECK: entry.split:
-; CHECK-NEXT: br i1 %b, label %for.body, label %abort1.split
+; CHECK-NEXT: br i1 %b.fr, label %for.body, label %abort1.split
 
 ; CHECK: for.body:
 ; CHECK-NEXT: br label %for.body
