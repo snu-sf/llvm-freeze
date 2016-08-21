@@ -212,8 +212,15 @@ Instruction *InstCombiner::foldSelectOpOp(SelectInst &SI, Instruction *TI,
   case Instruction::URem:
   case Instruction::SDiv:
   case Instruction::SRem:
-    Cond = Builder->CreateFreezeAtDef(SI.getCondition(),
-                                       SI.getParent()->getParent());
+    if (!isa<Constant>(SI.getCondition()))
+      // Create Freeze at the definition of condition value, and
+      // replace all uses of SI.getCondition() with the new freeze instruction.
+      Cond = Builder->CreateFreezeAtDef(Cond,
+                                       SI.getParent()->getParent(),
+                                       Cond->getName() + ".fr");
+    else
+      Cond = Builder->CreateFreeze(Cond, 
+                                   Cond->getName() + ".fr");
   }
   Value *NewSI = Builder->CreateSelect(Cond, OtherOpT,
                                        OtherOpF, SI.getName()+".v");

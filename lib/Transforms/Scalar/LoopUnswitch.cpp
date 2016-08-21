@@ -842,7 +842,7 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
 
   // Freeze
   IRBuilder<> Builder(ExitBlock);
-  Builder.CreateFreezeAtDef(Cond, ExitBlock->getParent(), Cond->getName() + ".fr");
+  Cond = Builder.CreateFreezeAtDef(Cond, ExitBlock->getParent(), Cond->getName() + ".fr");
 
   // Okay, now we have a position to branch from and a position to branch to,
   // insert the new conditional branch.
@@ -1151,7 +1151,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
 
   // Freeze
   IRBuilder<> Builder(loopPreheader);
-  Builder.CreateFreezeAtDef(LIC, loopPreheader->getParent(), LIC->getName() + ".fr");
+  LIC = Builder.CreateFreezeAtDef(LIC, loopPreheader->getParent(), LIC->getName() + ".fr");
   
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR,
                                  TI);
