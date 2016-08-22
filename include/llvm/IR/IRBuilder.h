@@ -1700,7 +1700,9 @@ public:
   Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "") {
     if (FreezeInst::isGuaranteedNotToBeUndef(Arg))
       return Arg;
-    
+
+    assert (!isa<Constant>(Arg) && "Constant has no def");
+
     if (Instruction *I = dyn_cast<Instruction>(Arg)) {
       FreezeInst *FI = new FreezeInst(I, Name);
       BasicBlock *BB = I->getParent();
@@ -1712,7 +1714,8 @@ public:
       I->replaceAllUsesWith(FI);
       FI->replaceUsesOfWith(FI, I);
       return FI;
-    } else if (isa<Constant>(Arg) || isa<Argument>(Arg)) {
+    } else {
+      assert(isa<Argument>(Arg) && "Cannot freeze the value");
       BasicBlock &Entry = F->getEntryBlock();
       FreezeInst *FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
       
@@ -1720,9 +1723,7 @@ public:
       FI->replaceUsesOfWith(FI, Arg);
       return FI;
     }
-    
-    assert((isa<PHINode>(Arg) || isa<Constant>(Arg) || isa<Argument>(Arg)) &&
-        "Cannot freeze the value");
+
     return nullptr;
   }
 
