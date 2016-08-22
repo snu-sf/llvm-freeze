@@ -1730,7 +1730,8 @@ public:
       I->replaceAllUsesWith(FI);
       FI->replaceUsesOfWith(FI, I);
       return FI;
-    } else if (isa<Argument>(Arg)) {
+    } else {
+      assert(isa<Argument>(Arg) && "Cannot freeze the value");
       BasicBlock &Entry = F->getEntryBlock();
       FreezeInst *FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
       
@@ -1739,8 +1740,6 @@ public:
       return FI;
     }
 
-    assert((isa<Instruction>(Arg) || isa<Argument>(Arg)) &&
-        "Cannot freeze the value");
     return nullptr;
   }
 
