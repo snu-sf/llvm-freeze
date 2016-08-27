@@ -172,6 +172,9 @@ namespace ISD {
     /// UNDEF - An undefined node.
     UNDEF,
 
+    /// FREEZE - A freeze node.
+    FREEZE,
+
     /// EXTRACT_ELEMENT - This is used to get the lower or upper (determined by
     /// a Constant, which is required to be operand #1) half of the integer or
     /// float value specified as operand #0.  This is only for use before
