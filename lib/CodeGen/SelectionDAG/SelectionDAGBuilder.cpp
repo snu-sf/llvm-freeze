@@ -9357,5 +9357,9 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
 
 void SelectionDAGBuilder::visitFreeze(const FreezeInst &I) {
   SDValue N = getValue(I.getOperand(0));
-  setValue(&I, N);
+  SDLoc dl = getCurSDLoc();
+  EVT DestVT = DAG.getTargetLoweringInfo().getValueType(DAG.getDataLayout(),
+                                                        I.getType());
+
+  setValue(&I, DAG.getNode(ISD::FREEZE, dl, DestVT, N));
 }
