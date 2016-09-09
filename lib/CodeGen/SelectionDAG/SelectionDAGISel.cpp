@@ -2228,7 +2228,21 @@ void SelectionDAGISel::Select_UNDEF(SDNode *N) {
 }
 
 void SelectionDAGISel::Select_FREEZE(SDNode *N) {
-  ReplaceUses(N, N->getOperand(0).getNode());
+  SDValue Op = N->getOperand(0);
+  EVT Ty = N->getValueType(0);
+  SDLoc dl(N);
+
+  const TargetRegisterClass *RC = TLI->getRegClassFor(Ty.getSimpleVT());
+  // Create a new virtual register.
+  unsigned NewVirtReg = RegInfo->createVirtualRegister(RC);
+  // Create CopyToReg node ('copy 0 into NewVirtReg')
+  SDValue CTRVal = CurDAG->getCopyToReg(CurDAG->getEntryNode(), dl,
+                                        NewVirtReg, Op);
+  // Create CopyFromReg node ('get value from NewVirtReg')
+  SDValue CFRVal = CurDAG->getCopyFromReg(CTRVal, dl, NewVirtReg, Ty);
+  // Mark selected.
+  CTRVal->setNodeId(-1);
+  ReplaceUses(SDValue(N, 0), CFRVal);
   CurDAG->RemoveDeadNode(N);
 }
 
