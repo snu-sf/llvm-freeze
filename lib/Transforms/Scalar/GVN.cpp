@@ -998,21 +998,46 @@ static Value *GetStoreValueForLoad(Value *SrcVal, unsigned Offset,
   if (SrcVal->getType()->getScalarType()->isPointerTy())
     SrcVal = Builder.CreatePtrToInt(SrcVal,
         DL.getIntPtrType(SrcVal->getType()));
-  if (!SrcVal->getType()->isIntegerTy())
-    SrcVal = Builder.CreateBitCast(SrcVal, IntegerType::get(Ctx, StoreSize*8));
 
-  // Shift the bits to the least significant depending on endianness.
-  unsigned ShiftAmt;
-  if (DL.isLittleEndian())
-    ShiftAmt = Offset*8;
-  else
-    ShiftAmt = (StoreSize-LoadSize-Offset)*8;
+  // If SrcVal is a type of vector <N x i8> ?
+  bool canUseVectorOperation = SrcVal->getType()->isVectorTy() &&
+      SrcVal->getType()->getVectorElementType()->isIntegerTy() &&
+      SrcVal->getType()->getVectorElementType()->getPrimitiveSizeInBits() == 8;
+  if (canUseVectorOperation) {
+    if (LoadSize == 1) {
+      // Use extractelement.
+      SrcVal = Builder.CreateExtractElement(SrcVal, (uint64_t)Offset);
+    } else {
+      // Use shufflevector + bitcast.
+      // Note that we don't have to consider endianness,
+      // because loading vector will always guarantee that the 0th element
+      // is from the lowest memory address
+      // http://llvm.org/docs/BigEndianNEON.html
+      SmallVector<Constant *, 16> Mask;
+      IntegerType *IntType = Type::getInt32Ty(LoadTy->getContext());
+      for (unsigned i = 0; i < LoadSize; i++)
+        Mask.push_back(ConstantInt::get(IntType, i + Offset));
+      SrcVal = Builder.CreateShuffleVector(SrcVal, UndefValue::get(SrcVal->getType()),
+          ConstantVector::get(Mask));
+      SrcVal = Builder.CreateBitCast(SrcVal, IntegerType::get(Ctx, LoadSize * 8));
+    }
+  } else {
+    if (!SrcVal->getType()->isIntegerTy())
+      SrcVal = Builder.CreateBitCast(SrcVal, IntegerType::get(Ctx, StoreSize*8));
 
-  if (ShiftAmt)
-    SrcVal = Builder.CreateLShr(SrcVal, ShiftAmt);
+    // Shift the bits to the least significant depending on endianness.
+    unsigned ShiftAmt;
+    if (DL.isLittleEndian())
+      ShiftAmt = Offset*8;
+    else
+      ShiftAmt = (StoreSize-LoadSize-Offset)*8;
 
-  if (LoadSize != StoreSize)
-    SrcVal = Builder.CreateTrunc(SrcVal, IntegerType::get(Ctx, LoadSize*8));
+    if (ShiftAmt)
+      SrcVal = Builder.CreateLShr(SrcVal, ShiftAmt);
+
+    if (LoadSize != StoreSize)
+      SrcVal = Builder.CreateTrunc(SrcVal, IntegerType::get(Ctx, LoadSize*8));
+  }
 
   return CoerceAvailableValueToLoadType(SrcVal, LoadTy, Builder, DL);
 }
@@ -1045,8 +1070,8 @@ static Value *GetLoadValueForLoad(LoadInst *SrcVal, unsigned Offset,
     // memdep queries will find the new load.  We can't easily remove the old
     // load completely because it is already in the value numbering table.
     IRBuilder<> Builder(SrcVal->getParent(), ++BasicBlock::iterator(SrcVal));
-    Type *DestPTy =
-      IntegerType::get(LoadTy->getContext(), NewLoadSize*8);
+    Type *DestPTy = VectorType::get(IntegerType::get(LoadTy->getContext(), 8),
+                                    NewLoadSize);
     DestPTy = PointerType::get(DestPTy,
                                PtrVal->getType()->getPointerAddressSpace());
     Builder.SetCurrentDebugLocation(SrcVal->getDebugLoc());
@@ -1061,9 +1086,27 @@ static Value *GetLoadValueForLoad(LoadInst *SrcVal, unsigned Offset,
     // Replace uses of the original load with the wider load.  On a big endian
     // system, we need to shift down to get the relevant bits.
     Value *RV = NewLoad;
-    if (DL.isBigEndian())
-      RV = Builder.CreateLShr(RV, (NewLoadSize - SrcValStoreSize) * 8);
-    RV = Builder.CreateTrunc(RV, SrcVal->getType());
+    if (SrcValStoreSize == 1) {
+      // extractelement
+      // Note that we don't have to consider endianness,
+      // because loading vector will always guarantee that the 0th element
+      // is from the lowest memory address
+      // http://llvm.org/docs/BigEndianNEON.html
+      RV = Builder.CreateExtractElement(RV, (uint64_t)0);
+    } else {
+      // shufflevector + bitcast
+      // Note that we don't have to consider endianness,
+      // because loading vector will always guarantee that the 0th element
+      // is from the lowest memory address
+      // http://llvm.org/docs/BigEndianNEON.html
+      SmallVector<Constant *, 16> Mask;
+      IntegerType *IntType = Type::getInt32Ty(LoadTy->getContext());
+      for (unsigned i = 0; i < SrcValStoreSize; i++)
+        Mask.push_back(ConstantInt::get(IntType, i));
+      RV = Builder.CreateShuffleVector(RV, UndefValue::get(RV->getType()),
+          ConstantVector::get(Mask));
+      RV = Builder.CreateBitCast(RV, SrcVal->getType());
+    }
     SrcVal->replaceAllUsesWith(RV);
 
     // We would like to use gvn.markInstructionForDeletion here, but we can't
@@ -1232,13 +1275,16 @@ bool GVN::AnalyzeLoadAvailability(LoadInst *LI, MemDepResult DepInfo,
     // read by the load, we can extract the bits we need for the load from the
     // stored value.
     if (StoreInst *DepSI = dyn_cast<StoreInst>(DepInfo.getInst())) {
-      // Can't forward from non-atomic to atomic without violating memory model.
-      if (Address && LI->isAtomic() <= DepSI->isAtomic()) {
-        int Offset =
-          AnalyzeLoadFromClobberingStore(LI->getType(), Address, DepSI);
-        if (Offset != -1) {
-          Res = AvailableValue::get(DepSI->getValueOperand(), Offset);
-          return true;
+      // Juneyoung Lee : Add constraint for this branch
+      if (DepSI->getValueOperand()->getType() == LI->getType()) {
+        // Can't forward from non-atomic to atomic without violating memory model.
+        if (Address && LI->isAtomic() <= DepSI->isAtomic()) {
+          int Offset =
+            AnalyzeLoadFromClobberingStore(LI->getType(), Address, DepSI);
+          if (Offset != -1) {
+            Res = AvailableValue::get(DepSI->getValueOperand(), Offset);
+            return true;
+          }
         }
       }
     }
@@ -1248,16 +1294,19 @@ bool GVN::AnalyzeLoadAvailability(LoadInst *LI, MemDepResult DepInfo,
     //    load i8* (P+1)
     // if we have this, replace the later with an extraction from the former.
     if (LoadInst *DepLI = dyn_cast<LoadInst>(DepInfo.getInst())) {
-      // If this is a clobber and L is the first instruction in its block, then
-      // we have the first instruction in the entry block.
-      // Can't forward from non-atomic to atomic without violating memory model.
-      if (DepLI != LI && Address && LI->isAtomic() <= DepLI->isAtomic()) {
-        int Offset =
-          AnalyzeLoadFromClobberingLoad(LI->getType(), Address, DepLI, DL);
+      // Juneyoung Lee : Add constraint for this branch
+      if (DepLI->getType() == LI->getType()) {
+        // If this is a clobber and L is the first instruction in its block, then
+        // we have the first instruction in the entry block.
+        // Can't forward from non-atomic to atomic without violating memory model.
+        if (DepLI != LI && Address && LI->isAtomic() <= DepLI->isAtomic()) {
+          int Offset =
+            AnalyzeLoadFromClobberingLoad(LI->getType(), Address, DepLI, DL);
 
-        if (Offset != -1) {
-          Res = AvailableValue::getLoad(DepLI, Offset);
-          return true;
+          if (Offset != -1) {
+            Res = AvailableValue::getLoad(DepLI, Offset);
+            return true;
+          }
         }
       }
     }
@@ -1303,6 +1352,9 @@ bool GVN::AnalyzeLoadAvailability(LoadInst *LI, MemDepResult DepInfo,
   }
 
   if (StoreInst *S = dyn_cast<StoreInst>(DepInst)) {
+    // Juneyoung Lee : Add constraint for this branch
+    if (S->getValueOperand()->getType() != LI->getType())
+      return false;
     // Reject loads and stores that are to the same address but are of
     // different types if we have to. If the stored value is larger or equal to
     // the loaded value, we can reuse it.
@@ -1320,6 +1372,9 @@ bool GVN::AnalyzeLoadAvailability(LoadInst *LI, MemDepResult DepInfo,
   }
 
   if (LoadInst *LD = dyn_cast<LoadInst>(DepInst)) {
+    // Juneyoung Lee : Add constraint for this branch
+    if (LD->getType() != LI->getType())
+      return false;
     // If the types mismatch and we can't handle it, reject reuse of the load.
     // If the stored value is larger or equal to the loaded value, we can reuse
     // it.
