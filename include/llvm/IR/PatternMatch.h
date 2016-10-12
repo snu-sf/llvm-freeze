@@ -901,6 +901,25 @@ template <typename LHS> inline fneg_match<LHS> m_FNeg(const LHS &L) {
   return L;
 }
 
+template <typename Op_t> struct FreezeClass_match {
+  Op_t Op;
+
+  FreezeClass_match(const Op_t &OpMatch) : Op(OpMatch) {}
+
+  template <typename OpTy> bool match(OpTy *V) {
+    if (auto *O = dyn_cast<Operator>(V))
+      return O->getOpcode() == Instruction::Freeze && Op.match(O->getOperand(0));
+    return false;
+  }
+};
+
+/// \brief Matches Freeze.
+template <typename OpTy>
+inline FreezeClass_match<OpTy> m_Freeze(const OpTy &Op) {
+  return FreezeClass_match<OpTy>(Op);
+}
+
+
 //===----------------------------------------------------------------------===//
 // Matchers for control flow.
 //
