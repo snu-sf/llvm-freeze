@@ -190,6 +190,7 @@ class TypePromotionTransaction;
     bool optimizeShuffleVectorInst(ShuffleVectorInst *SI);
     bool optimizeSwitchInst(SwitchInst *CI);
     bool optimizeExtractElementInst(Instruction *Inst);
+    bool optimizeFreezeInst(FreezeInst *FI);
     bool dupRetToEnableTailCallOpts(BasicBlock *BB);
     bool placeDbgValues(Function &F);
     bool sinkAndCmp(Function &F);
@@ -766,6 +767,9 @@ static bool SinkCast(CastInst *CI) {
     // If the block selected to receive the cast is an EH pad that does not
     // allow non-PHI instructions before the terminator, we can't sink the
     // cast.
+    if (UserBB->getTerminator() == nullptr) {
+      outs() << "???? : \n" << *UserBB << "\n";
+    }
     if (UserBB->getTerminator()->isEHPad())
       continue;
 
@@ -4812,6 +4816,52 @@ bool CodeGenPrepare::optimizeSwitchInst(SwitchInst *SI) {
   return true;
 }
 
+/// If we have a FreezeInst that will inhibit important optimizations,
+/// try to remove the instruction or fold into its operand.
+bool CodeGenPrepare::optimizeFreezeInst(FreezeInst *FI) {
+  /// Handle this case : 
+  ///   %cmp = icmp op i32 %x, ConstantInt
+  ///   %cmp.fr = freeze i1 %cmp
+  ///   %x = and/or i1 %cmp.fr, ...
+  /// =>
+  ///   %x.fr = freeze i32 %x
+  ///   %cmp = icmp op i32 %x.fr, ConstantInt
+  ///   %x = and/or i1 %cmp, ...
+  /// We need this because SelectionDAGBuilder::visitBr() tries to
+  /// optimize br i1 (and (icmp ...), (icmp ...)) into two separated
+  /// branches.
+  ICmpInst::Predicate Pred;
+  Value *ICmpLHS;
+  ConstantInt *ICmpRHS;
+  if (match(FI, m_Freeze(m_ICmp(Pred, m_Value(ICmpLHS),
+                                m_ConstantInt(ICmpRHS))))) {
+     // We allow this transformation if FI's users are br / and / or.
+     bool OptCase = true;
+     for (auto itr = FI->user_begin(); itr != FI->user_end(); itr++) {
+       Value *V = *itr;
+       if (isa<BranchInst>(V)) continue;
+       else if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(V)) {
+         if (Bop->getOpcode() == Instruction::And ||
+             Bop->getOpcode() == Instruction::Or)
+           continue;
+       }
+       OptCase = false;
+       break;
+     }
+     if (OptCase) {
+       ICmpInst *ICmp = dyn_cast<ICmpInst>(FI->getOperand(0));
+       FreezeInst *ICmpLHSFr = new FreezeInst(ICmpLHS);
+       // Insert %x.fr
+       ICmpLHSFr->insertBefore(ICmp);
+       ICmp->setOperand(0, ICmpLHSFr);
+       FI->replaceAllUsesWith(ICmp);
+       FI->eraseFromParent();
+       return true;
+     }
+  }
+  return false;
+}
+
 namespace {
 /// \brief Helper class to promote a scalar operation to a vector one.
 /// This class is used to move downward extractelement transition.
@@ -5230,6 +5280,9 @@ bool CodeGenPrepare::optimizeInst(Instruction *I, bool& ModifiedDT) {
   if (CmpInst *CI = dyn_cast<CmpInst>(I))
     if (!TLI || !TLI->hasMultipleConditionRegisters())
       return OptimizeCmpExpression(CI, TLI);
+
+  if (FreezeInst *FI = dyn_cast<FreezeInst>(I))
+    return optimizeFreezeInst(FI);
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     stripInvariantGroupMetadata(*LI);
