@@ -895,9 +895,6 @@ static bool SinkCast(CastInst *CI) {
     // If the block selected to receive the cast is an EH pad that does not
     // allow non-PHI instructions before the terminator, we can't sink the
     // cast.
-    if (UserBB->getTerminator() == nullptr) {
-      outs() << "???? : \n" << *UserBB << "\n";
-    }
     if (UserBB->getTerminator()->isEHPad())
       continue;
 

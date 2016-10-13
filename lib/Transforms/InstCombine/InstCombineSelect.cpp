@@ -212,7 +212,8 @@ Instruction *InstCombiner::foldSelectOpOp(SelectInst &SI, Instruction *TI,
   case Instruction::URem:
   case Instruction::SDiv:
   case Instruction::SRem:
-    if (!isa<Constant>(SI.getCondition()))
+    if (!isa<Constant>(SI.getCondition()) && 
+        !isa<TerminatorInst>(SI.getCondition()))
       // Create Freeze at the definition of condition value, and
       // replace all uses of SI.getCondition() with the new freeze instruction.
       Cond = Builder->CreateFreezeAtDef(Cond,
