@@ -1697,7 +1697,8 @@ public:
   /// \brief If \p Arg is guaranteed not to be undef, return \p Arg.
   /// Otherwise, insert a freeze instruction at the definition of \p Arg and return 
   /// the new value
-  Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "") {
+  Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "",
+                           bool replaceAllUses = true) {
     if (FreezeInst::isGuaranteedNotToBeUndef(Arg))
       return Arg;
 
@@ -1708,19 +1709,26 @@ public:
       BasicBlock *BB = I->getParent();
       if (isa<PHINode>(I)) {
         BB->getInstList().insert(BB->getFirstInsertionPt(), FI);
+      } else if (isa<InvokeInst>(I)) {
+        // invoke is a terminator, so we have to put freeze into
+        // the beginning of its branch.
+        assert (!isa<InvokeInst>(I) && "Cannot put Freeze at def of terminator.");
       } else {
         FI->insertAfter(I);
       }
-      I->replaceAllUsesWith(FI);
-      FI->replaceUsesOfWith(FI, I);
+      if (replaceAllUses) {
+        I->replaceAllUsesWith(FI);
+        FI->replaceUsesOfWith(FI, I);
+      }
       return FI;
     } else {
       assert(isa<Argument>(Arg) && "Cannot freeze the value");
       BasicBlock &Entry = F->getEntryBlock();
       FreezeInst *FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
-      
-      Arg->replaceAllUsesWith(FI);
-      FI->replaceUsesOfWith(FI, Arg);
+      if(replaceAllUses) {
+        Arg->replaceAllUsesWith(FI);
+        FI->replaceUsesOfWith(FI, Arg);
+      }
       return FI;
     }
 
