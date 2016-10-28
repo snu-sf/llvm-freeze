@@ -7994,8 +7994,12 @@ ScalarEvolution::isLoopEntryGuardedByCond(const Loop *L,
         LoopEntryPredicate->isUnconditional())
       continue;
 
+    Value *Cond = LoopEntryPredicate->getCondition();
+    if (FreezeInst *FI = dyn_cast<FreezeInst>(Cond))
+      Cond = FI->getOperand(0);
+
     if (isImpliedCond(Pred, LHS, RHS,
-                      LoopEntryPredicate->getCondition(),
+                      Cond,
                       LoopEntryPredicate->getSuccessor(0) != Pair.second))
       return true;
   }
