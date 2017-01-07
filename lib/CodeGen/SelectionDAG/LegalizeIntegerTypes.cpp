@@ -156,6 +156,9 @@ void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
   case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS:
     Res = PromoteIntRes_AtomicCmpSwap(cast<AtomicSDNode>(N), ResNo);
     break;
+  case ISD::FREEZE:
+    Res = PromoteIntRes_FREEZE(N);
+    break;
   }
 
   // If the result is null then the sub-method took care of registering it.
@@ -303,6 +306,12 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BITCAST(SDNode *N) {
 
   return DAG.getNode(ISD::ANY_EXTEND, dl, NOutVT,
                      CreateStackStoreLoad(InOp, OutVT));
+}
+
+SDValue DAGTypeLegalizer::PromoteIntRes_FREEZE(SDNode *N) {
+  SDValue V = GetPromotedInteger(N->getOperand(0));
+  return DAG.getNode(N->getOpcode(), SDLoc(N),
+                     V.getValueType(), V);
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_BSWAP(SDNode *N) {
@@ -920,6 +929,7 @@ bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
   case ISD::SRL:
   case ISD::ROTL:
   case ISD::ROTR: Res = PromoteIntOp_Shift(N); break;
+  case ISD::FREEZE: Res = PromoteIntOp_FREEZE(N); break;
   }
 
   // If the result is null, the sub-method took care of registering results etc.
@@ -1280,6 +1290,10 @@ SDValue DAGTypeLegalizer::PromoteIntOp_ZERO_EXTEND(SDNode *N) {
                                 N->getOperand(0).getValueType().getScalarType());
 }
 
+SDValue DAGTypeLegalizer::PromoteIntOp_FREEZE(SDNode *N) {
+  SDValue Op = GetPromotedInteger(N->getOperand(0));
+  return DAG.getNode(ISD::FREEZE, SDLoc(N), N->getValueType(0), Op);
+}
 
 //===----------------------------------------------------------------------===//
 //  Integer Result Expansion
@@ -1310,6 +1324,7 @@ void DAGTypeLegalizer::ExpandIntegerResult(SDNode *N, unsigned ResNo) {
   case ISD::SELECT:       SplitRes_SELECT(N, Lo, Hi); break;
   case ISD::SELECT_CC:    SplitRes_SELECT_CC(N, Lo, Hi); break;
   case ISD::UNDEF:        SplitRes_UNDEF(N, Lo, Hi); break;
+  case ISD::FREEZE:       SplitRes_FREEZE(N, Lo, Hi); break;
 
   case ISD::BITCAST:            ExpandRes_BITCAST(N, Lo, Hi); break;
   case ISD::BUILD_PAIR:         ExpandRes_BUILD_PAIR(N, Lo, Hi); break;
@@ -2775,6 +2790,7 @@ bool DAGTypeLegalizer::ExpandIntegerOperand(SDNode *N, unsigned OpNo) {
   case ISD::STORE:   Res = ExpandIntOp_STORE(cast<StoreSDNode>(N), OpNo); break;
   case ISD::TRUNCATE:          Res = ExpandIntOp_TRUNCATE(N); break;
   case ISD::UINT_TO_FP:        Res = ExpandIntOp_UINT_TO_FP(N); break;
+  case ISD::FREEZE:            Res = ExpandIntOp_FREEZE(N); break;
 
   case ISD::SHL:
   case ISD::SRA:
@@ -3225,6 +3241,11 @@ SDValue DAGTypeLegalizer::ExpandIntOp_ATOMIC_STORE(SDNode *N) {
   return Swap.getValue(1);
 }
 
+SDValue DAGTypeLegalizer::ExpandIntOp_FREEZE(SDNode *N) {
+  SDValue InL, InH;
+  GetExpandedInteger(N->getOperand(0), InL, InH);
+  return DAG.getNode(ISD::FREEZE, SDLoc(N), N->getValueType(0), InL);
+}
 
 SDValue DAGTypeLegalizer::PromoteIntRes_EXTRACT_SUBVECTOR(SDNode *N) {
   SDValue InOp0 = N->getOperand(0);
@@ -3450,3 +3471,5 @@ SDValue DAGTypeLegalizer::PromoteIntOp_CONCAT_VECTORS(SDNode *N) {
 
   return DAG.getNode(ISD::BUILD_VECTOR, dl,  N->getValueType(0), NewOps);
 }
+
+
