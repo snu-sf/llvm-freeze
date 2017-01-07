@@ -3471,5 +3471,3 @@ SDValue DAGTypeLegalizer::PromoteIntOp_CONCAT_VECTORS(SDNode *N) {
 
   return DAG.getNode(ISD::BUILD_VECTOR, dl,  N->getValueType(0), NewOps);
 }
-
-
