@@ -4368,6 +4368,23 @@ Value *llvm::SimplifyCall(Value *V, ArrayRef<Value *> Args,
                         Query(DL, TLI, DT, AC, CxtI), RecursionLimit);
 }
 
+/// Given operands for a Freeze, see if we can fold the result.
+static Value *SimplifyFreezeInst(Value *Op0) {
+  // Currently we don't have constantexpr freeze, so just check
+  // whether it is a ConstantInt.
+  if (isa<ConstantInt>(Op0))
+    return Op0;
+  return nullptr;
+}
+
+Value *llvm::SimplifyFreezeInst(Value *Op0,
+                              const DataLayout &DL,
+                              const TargetLibraryInfo *TLI,
+                              const DominatorTree *DT, AssumptionCache *AC,
+                              const Instruction *CxtI) {
+  return ::SimplifyFreezeInst(Op0);
+}
+
 /// See if we can compute a simplified version of this instruction.
 /// If not, this returns null.
 Value *llvm::SimplifyInstruction(Instruction *I, const DataLayout &DL,
@@ -4507,6 +4524,9 @@ Value *llvm::SimplifyInstruction(Instruction *I, const DataLayout &DL,
                           TLI, DT, AC, I);
     break;
   }
+  case Instruction::Freeze:
+    Result = SimplifyFreezeInst(I->getOperand(0), DL, TLI, DT, AC, I);
+    break;
 #define HANDLE_CAST_INST(num, opc, clas) case Instruction::opc:
 #include "llvm/IR/Instruction.def"
 #undef HANDLE_CAST_INST
