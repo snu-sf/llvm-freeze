@@ -16,8 +16,7 @@ for.body:                                         ; preds = %for.inc, %for.body.
   %cmp1 = icmp eq i32 %a, 12345
   br i1 %cmp1, label %if.then, label %if.else, !prof !0
 ; CHECK: %cmp1 = icmp eq i32 %a, 12345
-; CHECK-NEXT: %cmp1.fr = freeze i1 %cmp1
-; CHECK-NEXT: br i1 %cmp1.fr, label %for.body.us, label %for.body, !prof !0
+; CHECK-NEXT: br i1 %cmp1, label %for.body.us, label %for.body, !prof !0
 if.then:                                          ; preds = %for.body
 ; CHECK: for.body.us:
 ; CHECK: add nsw i32 %{{.*}}, 123
