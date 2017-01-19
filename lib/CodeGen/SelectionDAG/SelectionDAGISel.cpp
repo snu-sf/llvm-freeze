@@ -2227,6 +2227,57 @@ void SelectionDAGISel::Select_UNDEF(SDNode *N) {
   CurDAG->SelectNodeTo(N, TargetOpcode::IMPLICIT_DEF, N->getValueType(0));
 }
 
+void SelectionDAGISel::Select_FREEZE(SDNode *N) {
+  SDValue Op = N->getOperand(0);
+  EVT Ty = N->getValueType(0);
+  SDLoc dl(N);
+
+  // Select FREEZE to CopyToReg + CopyFromReg.
+  // This blocks propagation of UNDEF while translating SelDag into
+  // MachineInstr.
+  // LLVM translates an UNDEF node into multiple IMPLICIT_DEF
+  // instructions (in MachineInstr) if the UNDEF has multiple uses.
+  // For example,
+  // 
+  // %y1 = UNDEF
+  // %t1 = mul i64 %y1, %y1
+  //
+  // It is translated into MachineInstr code
+  //
+  // %vreg2 = IMPLICIT_DEF
+  // %vreg3 = IMPLICIT_DEF
+  // %vreg1 = IMUL32rr %vreg2, %vreg3
+  //
+  // However, with freeze,
+  //
+  // %y1 = freeze i64 UNDEF
+  // %t1 = mul i64 %y1, %y1
+  //
+  // each read of %y1 must yield same value, so it must be translated into : 
+  // 
+  // %vreg2 = IMPLICIT_DEF
+  // %vreg1 = IMUL32rr %vreg2, %vreg2
+  //
+  // Selecting FREEZE into CopyToReg + CopyFromReg helps this.
+  //
+  // We don't have FREEZE pseudo-instruction in MachineInstr-level now.
+  // If FREEZE instruction is added later, the code below must be
+  // changed as well.
+
+  const TargetRegisterClass *RC = TLI->getRegClassFor(Ty.getSimpleVT());
+  // Create a new virtual register.
+  unsigned NewVirtReg = RegInfo->createVirtualRegister(RC);
+  // Create CopyToReg node ('copy val into NewVirtReg')
+  SDValue CTRVal = CurDAG->getCopyToReg(CurDAG->getEntryNode(), dl,
+                                        NewVirtReg, Op);
+  // Create CopyFromReg node ('get value from NewVirtReg')
+  SDValue CFRVal = CurDAG->getCopyFromReg(CTRVal, dl, NewVirtReg, Ty);
+  // Mark selected.
+  CTRVal->setNodeId(-1);
+  ReplaceUses(SDValue(N, 0), CFRVal);
+  CurDAG->RemoveDeadNode(N);
+}
+
 /// GetVBR - decode a vbr encoding whose top bit is set.
 LLVM_ATTRIBUTE_ALWAYS_INLINE static inline uint64_t
 GetVBR(uint64_t Val, const unsigned char *MatcherTable, unsigned &Idx) {
@@ -2852,6 +2903,9 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
     return;
   case ISD::UNDEF:
     Select_UNDEF(NodeToMatch);
+    return;
+  case ISD::FREEZE:
+    Select_FREEZE(NodeToMatch);
     return;
   }
 

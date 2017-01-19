@@ -53,7 +53,8 @@ entry:
   br label %for.body
 ;CHECK: entry:
 ;CHECK-NEXT: %cmp1 = icmp eq i32 1, 2
-;CHECK-NEXT: br i1 %cmp1, label %for.body, label %for.cond.cleanup.split, !prof !1
+;CHECK-NEXT: %cmp1.fr = freeze i1 %cmp1
+;CHECK-NEXT: br i1 %cmp1.fr, label %for.body, label %for.cond.cleanup.split, !prof !1
 ;CHECK: for.body:
 for.body:                                         ; preds = %for.inc, %entry
   %inc.i = phi i32 [ 0, %entry ], [ %inc, %if.then ]

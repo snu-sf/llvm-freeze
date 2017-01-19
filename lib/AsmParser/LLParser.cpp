@@ -5103,6 +5103,7 @@ int LLParser::ParseInstruction(Instruction *&Inst, BasicBlock *BB,
   case lltok::kw_shufflevector:  return ParseShuffleVector(Inst, PFS);
   case lltok::kw_phi:            return ParsePHI(Inst, PFS);
   case lltok::kw_landingpad:     return ParseLandingPad(Inst, PFS);
+  case lltok::kw_freeze:         return ParseFreeze(Inst, PFS);
   // Call.
   case lltok::kw_call:     return ParseCall(Inst, PFS, CallInst::TCK_None);
   case lltok::kw_tail:     return ParseCall(Inst, PFS, CallInst::TCK_Tail);
@@ -5898,6 +5899,21 @@ bool LLParser::ParseLandingPad(Instruction *&Inst, PerFunctionState &PFS) {
   }
 
   Inst = LP.release();
+  return false;
+}
+
+/// ParseFreeze
+///   ::= 'freeze' Type Value
+bool LLParser::ParseFreeze(Instruction *&Inst, PerFunctionState &PFS) {
+  LocTy Loc;
+  Value *Op;
+  if (ParseTypeAndValue(Op, Loc, PFS))
+    return true;
+
+  if (!Op->getType()->isIntegerTy())
+    return Error(Loc,"cannot freeze non-integer type");
+
+  Inst = new FreezeInst(Op, "");
   return false;
 }
 

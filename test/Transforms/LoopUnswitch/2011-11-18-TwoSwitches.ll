@@ -5,14 +5,16 @@
 ; STATS: 1 loop-simplify - Number of pre-header or exit blocks inserted
 ; STATS: 3 loop-unswitch - Number of switches unswitched
 
-; CHECK:        %1 = icmp eq i32 %c, 1
+; CHECK:        %d.fr = freeze i32 %d
+; CHECK-NEXT:   %d.fr.fr = freeze i32 %d.fr
+; CHECK-NEXT:   %1 = icmp eq i32 %c, 1
 ; CHECK-NEXT:   br i1 %1, label %.split.us, label %..split_crit_edge
 
 ; CHECK:      ..split_crit_edge:                                ; preds = %0
 ; CHECK-NEXT:   br label %.split
 
 ; CHECK:      .split.us:                                        ; preds = %0
-; CHECK-NEXT:   %2 = icmp eq i32 %d, 1
+; CHECK-NEXT:   %2 = icmp eq i32 %d.fr.fr, 1
 ; CHECK-NEXT:   br i1 %2, label %.split.us.split.us, label %.split.us..split.us.split_crit_edge
 
 ; CHECK:      .split.us..split.us.split_crit_edge:              ; preds = %.split.us
@@ -43,7 +45,7 @@
 ; CHECK-NEXT:     i32 1, label %inc.us
 
 ; CHECK:      second_switch.us:                                 ; preds = %loop_begin.us
-; CHECK-NEXT:   switch i32 %d, label %default.us [
+; CHECK-NEXT:   switch i32 %d.fr.fr, label %default.us [
 ; CHECK-NEXT:     i32 1, label %second_switch.us.inc.us_crit_edge
 ; CHECK-NEXT:   ]
 
@@ -55,7 +57,7 @@
 ; CHECK-NEXT:   br label %loop_begin.backedge.us
 
 ; CHECK:      .split:                                           ; preds = %..split_crit_edge
-; CHECK-NEXT:   %3 = icmp eq i32 %d, 1
+; CHECK-NEXT:   %3 = icmp eq i32 %d.fr.fr, 1
 ; CHECK-NEXT:   br i1 %3, label %.split.split.us, label %.split..split.split_crit_edge
 
 ; CHECK:      .split..split.split_crit_edge:                    ; preds = %.split
@@ -95,7 +97,7 @@
 ; CHECK-NEXT:   br i1 true, label %us-unreachable.us-lcssa, label %inc
 
 ; CHECK:      second_switch:                                    ; preds = %loop_begin
-; CHECK-NEXT:   switch i32 %d, label %default [
+; CHECK-NEXT:   switch i32 %d.fr.fr, label %default [
 ; CHECK-NEXT:     i32 1, label %second_switch.inc_crit_edge
 ; CHECK-NEXT:   ]
 
