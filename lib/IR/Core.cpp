@@ -3002,6 +3002,11 @@ LLVMValueRef LLVMBuildInsertValue(LLVMBuilderRef B, LLVMValueRef AggVal,
                                            Index, Name));
 }
 
+LLVMValueRef LLVMBuildFreeze(LLVMBuilderRef B, LLVMValueRef Val,
+                             const char *Name) {
+  return wrap(unwrap(B)->CreateFreeze(unwrap(Val), Name));
+}
+
 LLVMValueRef LLVMBuildIsNull(LLVMBuilderRef B, LLVMValueRef Val,
                              const char *Name) {
   return wrap(unwrap(B)->CreateIsNull(unwrap(Val), Name));
