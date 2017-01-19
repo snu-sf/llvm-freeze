@@ -5,7 +5,8 @@
 ; STATS: 1 loop-simplify - Number of pre-header or exit blocks inserted
 ; STATS: 2 loop-unswitch - Number of switches unswitched
 
-; CHECK:      %1 = icmp eq i32 %c, 1
+; CHECK:      %c.fr = freeze i32 %c
+; CHECK-NEXT: %1 = icmp eq i32 %c.fr, 1
 ; CHECK-NEXT: br i1 %1, label %.split.us, label %..split_crit_edge
 
 ; CHECK:      ..split_crit_edge:                                ; preds = %0
@@ -24,7 +25,7 @@
 ; CHECK-NEXT:   br label %loop_begin.backedge.us
 
 ; CHECK:      .split:                                           ; preds = %..split_crit_edge
-; CHECK-NEXT:   %2 = icmp eq i32 %c, 2
+; CHECK-NEXT:   %2 = icmp eq i32 %c.fr, 2
 ; CHECK-NEXT:   br i1 %2, label %.split.split.us, label %.split..split.split_crit_edge
 
 ; CHECK:      .split..split.split_crit_edge:                    ; preds = %.split
@@ -49,7 +50,7 @@
 
 ; CHECK:      loop_begin:                                       ; preds = %loop_begin.backedge, %.split.split
 ; CHECK-NEXT:   %var_val = load i32, i32* %var
-; CHECK-NEXT:   switch i32 %c, label %default.us-lcssa.us-lcssa [
+; CHECK-NEXT:   switch i32 %c.fr, label %default.us-lcssa.us-lcssa [
 ; CHECK-NEXT:     i32 1, label %inc
 ; CHECK-NEXT:     i32 2, label %dec
 ; CHECK-NEXT:   ]
