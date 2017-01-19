@@ -2227,6 +2227,25 @@ void SelectionDAGISel::Select_UNDEF(SDNode *N) {
   CurDAG->SelectNodeTo(N, TargetOpcode::IMPLICIT_DEF, N->getValueType(0));
 }
 
+void SelectionDAGISel::Select_FREEZE(SDNode *N) {
+  SDValue Op = N->getOperand(0);
+  EVT Ty = N->getValueType(0);
+  SDLoc dl(N);
+
+  const TargetRegisterClass *RC = TLI->getRegClassFor(Ty.getSimpleVT());
+  // Create a new virtual register.
+  unsigned NewVirtReg = RegInfo->createVirtualRegister(RC);
+  // Create CopyToReg node ('copy val into NewVirtReg')
+  SDValue CTRVal = CurDAG->getCopyToReg(CurDAG->getEntryNode(), dl,
+                                        NewVirtReg, Op);
+  // Create CopyFromReg node ('get value from NewVirtReg')
+  SDValue CFRVal = CurDAG->getCopyFromReg(CTRVal, dl, NewVirtReg, Ty);
+  // Mark selected.
+  CTRVal->setNodeId(-1);
+  ReplaceUses(SDValue(N, 0), CFRVal);
+  CurDAG->RemoveDeadNode(N);
+}
+
 /// GetVBR - decode a vbr encoding whose top bit is set.
 LLVM_ATTRIBUTE_ALWAYS_INLINE static inline uint64_t
 GetVBR(uint64_t Val, const unsigned char *MatcherTable, unsigned &Idx) {
@@ -2852,6 +2871,9 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
     return;
   case ISD::UNDEF:
     Select_UNDEF(NodeToMatch);
+    return;
+  case ISD::FREEZE:
+    Select_FREEZE(NodeToMatch);
     return;
   }
 
