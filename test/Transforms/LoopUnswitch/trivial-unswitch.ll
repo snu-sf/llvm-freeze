@@ -5,15 +5,13 @@
 ; after unswitching the first one.
 
 
-; CHECK:  %cond2.fr = freeze i1 %cond2
-; CHECK:  %cond1.fr = freeze i1 %cond1
-; CHECK:  br i1 %cond1.fr, label %..split_crit_edge, label %.loop_exit.split_crit_edge
+; CHECK:  br i1 %cond1, label %..split_crit_edge, label %.loop_exit.split_crit_edge
 
 ; CHECK:  ..split_crit_edge:                                ; preds = %0
 ; CHECK:    br label %.split
 
 ; CHECK:  .split:                                           ; preds = %..split_crit_edge
-; CHECK:    br i1 %cond2.fr, label %.split..split.split_crit_edge, label %.split.loop_exit.split1_crit_edge
+; CHECK:    br i1 %cond2, label %.split..split.split_crit_edge, label %.split.loop_exit.split1_crit_edge
 
 ; CHECK:  .split..split.split_crit_edge:                    ; preds = %.split
 ; CHECK:    br label %.split.split
