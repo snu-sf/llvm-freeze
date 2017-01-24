@@ -5775,6 +5775,13 @@ bool SimplifyCFGOpt::SimplifyCondBranch(BranchInst *BI, IRBuilder<> &Builder) {
       bool CondIsFalse = PBI->getSuccessor(1) == BB;
       Optional<bool> Implication = isImpliedCondition(
           PBI->getCondition(), BI->getCondition(), DL, CondIsFalse);
+
+      // Deal with the case when the condition of BI is freezed
+      Value *BICondFr;
+      if (match(BI->getCondition(), m_Freeze(m_Value(BICondFr))) &&
+          BICondFr == PBI->getCondition())
+        Implication = !CondIsFalse;
+
       if (Implication) {
         // Turn this into a branch on constant.
         auto *OldCond = BI->getCondition();
