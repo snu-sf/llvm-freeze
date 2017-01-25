@@ -4347,7 +4347,7 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
       if (OpNum != Record.size())
         return error("Invalid record");
 
-      I = new FreezeInst(Op, "");
+      I = new FreezeInst(Op);
       InstructionList.push_back(I);
       break;
     }

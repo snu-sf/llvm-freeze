@@ -3904,15 +3904,15 @@ bool llvm::isGuaranteedNotToBeUndefOrPoison(const Value *V) {
     // be undef or poison.
     if (isa<FreezeInst>(I))
       return true;
-    // Here we just stay conservative.
+    // TODO: Some instructions are guaranteed to return neither undef
+    // nor poison if their arguments are not poison/undef.
     return false;
   }
 
   if (const Constant *C = dyn_cast<Constant>(V)) {
-    // If the value is a constant integer, then return true.
     if (isa<ConstantInt>(C))
       return true;
-    // Note that we have much room for improvement.
+    // TODO: There are many ConstantExpr cases which must be dealt with.
     return false;
   }
 

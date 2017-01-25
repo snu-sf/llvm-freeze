@@ -5913,7 +5913,7 @@ bool LLParser::ParseFreeze(Instruction *&Inst, PerFunctionState &PFS) {
   if (!Op->getType()->isIntegerTy())
     return Error(Loc,"cannot freeze non-integer type");
 
-  Inst = new FreezeInst(Op, "");
+  Inst = new FreezeInst(Op);
   return false;
 }
 

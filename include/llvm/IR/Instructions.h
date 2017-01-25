@@ -5061,7 +5061,7 @@ public:
 //===----------------------------------------------------------------------===//
 
 /// This class represents a freeze function that returns random concrete
-/// value if an operand is either a poison value or an undefine value
+/// value if an operand is either a poison value or an undef value
 class FreezeInst : public UnaryInstruction {
 protected:
   // Note: Instruction needs to be a friend here to call cloneImpl.
