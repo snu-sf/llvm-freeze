@@ -2773,6 +2773,16 @@ Instruction *InstCombiner::visitFreeze(FreezeInst &FI) {
   if (Value *V = SimplifyFreezeInst(Op0, DL, &TLI, &DT, &AC))
     return replaceInstUsesWith(FI, V);
 
+  ICmpInst::Predicate Pred;
+  Value *Arg;
+  ConstantInt *CI;
+  if (match(Op0, m_ICmp(Pred, m_Value(Arg), m_ConstantInt(CI))) &&
+      isa<Argument>(Arg)) {
+    // freeze (icmp arg, const) -> icmp (freeze arg), const
+    Builder->CreateFreezeAtDef(Arg, FI.getParent()->getParent());
+    return replaceInstUsesWith(FI, Op0);
+  }
+
   return nullptr;
 }
 
