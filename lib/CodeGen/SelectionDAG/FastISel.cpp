@@ -1316,6 +1316,28 @@ bool FastISel::selectBitCast(const User *I) {
   return true;
 }
 
+bool FastISel::selectFreeze(const User *I) {
+  // Lower Freeze to reg-reg copy.
+  unsigned Reg = getRegForValue(I->getOperand(0));
+  if (!Reg)
+    // Unhandled operand.
+    return false;
+
+  EVT ETy = TLI.getValueType(DL, I->getOperand(0)->getType());
+  if (ETy == MVT::Other || !TLI.isTypeLegal(ETy))
+    // Unhandled type, bail out.
+    return false;
+
+  MVT Ty = ETy.getSimpleVT();
+  const TargetRegisterClass *TyRegClass = TLI.getRegClassFor(Ty);
+  unsigned ResultReg = createResultReg(TyRegClass);
+  BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc,
+          TII.get(TargetOpcode::COPY), ResultReg).addReg(Reg);
+
+  updateValueMap(I, ResultReg);
+  return true;
+}
+
 // Remove local value instructions starting from the instruction after
 // SavedLastLocalValue to the current function insert point.
 void FastISel::removeDeadLocalValueCode(MachineInstr *SavedLastLocalValue)
@@ -1644,6 +1666,9 @@ bool FastISel::selectOperator(const User *I, unsigned Opcode) {
 
   case Instruction::ExtractValue:
     return selectExtractValue(I);
+
+  case Instruction::Freeze:
+    return selectFreeze(I);
 
   case Instruction::PHI:
     llvm_unreachable("FastISel shouldn't visit PHI nodes!");
