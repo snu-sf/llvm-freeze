@@ -3898,27 +3898,6 @@ bool llvm::isKnownNotFullPoison(const Instruction *PoisonI) {
   return false;
 }
 
-bool llvm::isGuaranteedNotToBeUndefOrPoison(const Value *V) {
-  if (const Instruction *I = dyn_cast<Instruction>(V)) {
-    // If the value is a freeze instruction, then it can never
-    // be undef or poison.
-    if (isa<FreezeInst>(I))
-      return true;
-    // TODO: Some instructions are guaranteed to return neither undef
-    // nor poison if their arguments are not poison/undef.
-    return false;
-  }
-
-  if (const Constant *C = dyn_cast<Constant>(V)) {
-    if (isa<ConstantInt>(C))
-      return true;
-    // TODO: There are many ConstantExpr cases which must be dealt with.
-    return false;
-  }
-
-  return false;
-}
-
 
 static bool isKnownNonNaN(const Value *V, FastMathFlags FMF) {
   if (FMF.noNaNs())

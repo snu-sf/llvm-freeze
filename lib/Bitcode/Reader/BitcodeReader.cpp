@@ -4346,6 +4346,8 @@ Error BitcodeReader::parseFunctionBody(Function *F) {
         return error("Invalid record");
       if (OpNum != Record.size())
         return error("Invalid record");
+      if (!Op->getType()->isIntegerTy())
+        return error("Invalid type for value");
 
       I = new FreezeInst(Op);
       InstructionList.push_back(I);

@@ -1710,37 +1710,6 @@ public:
                         Name);
   }
 
-  /// \brief Insert a freeze instruction at the definition of \p Arg and return 
-  /// the new value.
-  Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "",
-                           bool replaceAllUses = true) {
-    FreezeInst *FI = nullptr;
-
-    if (Instruction *I = dyn_cast<Instruction>(Arg)) {
-      FI = new FreezeInst(I, Name);
-      BasicBlock *BB = I->getParent();
-
-      if (isa<PHINode>(I)) {
-        BB->getInstList().insert(BB->getFirstInsertionPt(), FI);
-      } else if (isa<TerminatorInst>(I)) {
-        llvm_unreachable("unhandled value to freeze");
-      } else {
-        FI->insertAfter(I);
-      }
-    } else if (Argument *A = dyn_cast<Argument>(Arg)) {
-      BasicBlock &Entry = F->getEntryBlock();
-      FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
-    } else {
-      llvm_unreachable("unhandled value to freeze");
-    }
-
-    if (replaceAllUses) {
-      Arg->replaceAllUsesWith(FI);
-      FI->replaceUsesOfWith(FI, Arg);
-    }
-    return FI;
-  }
-
   /// \brief Return the i64 difference between two pointer values, dividing out
   /// the size of the pointed-to objects.
   ///
