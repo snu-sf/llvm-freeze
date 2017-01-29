@@ -414,10 +414,6 @@ template <typename T> class ArrayRef;
   /// the parent of I.
   bool isKnownNotFullPoison(const Instruction *PoisonI);
 
-  /// Return true if this function can prove that V is never undef value
-  /// or poison value.
-  bool isGuaranteedNotToBeUndefOrPoison(const Value *V);
-
   /// \brief Specific patterns of select instructions we can match.
   enum SelectPatternFlavor {
     SPF_UNKNOWN = 0,
