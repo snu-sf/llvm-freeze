@@ -619,6 +619,8 @@ bool LoopUnswitch::processCurrentLoop() {
       TerminatorInst *BBTI = BB->getTerminator();
       bool AlwaysReachableTI = true;
 
+      // Check whether all instructions in BB transfers execution
+      // to successors.
       for (auto &I : *BB) {
         Instruction *Inst = &I;
         if (!isGuaranteedToTransferExecutionToSuccessor(Inst)) {
@@ -629,7 +631,10 @@ bool LoopUnswitch::processCurrentLoop() {
       if (!AlwaysReachableTI)
         break;
 
+      // BBTI is always reachable from the header of the loop.
       ReachableTIs.insert(BBTI);
+
+      // Now proceed to the next basic block, or stop here?
       if (BBTI->getNumSuccessors() == 1)
         BB = BBTI->getSuccessor(0);
       else if (BranchInst *BBBI = dyn_cast<BranchInst>(BBTI)) {
@@ -643,11 +648,15 @@ bool LoopUnswitch::processCurrentLoop() {
         if (ConstantInt *CI = dyn_cast<ConstantInt>(BBSI->getCondition())) {
           SwitchInst::CaseIt CItr = BBSI->findCaseValue(CI);
           BB = CItr.getCaseSuccessor();
-          if (ReachableTIs.count(BB->getTerminator()) > 0)
-            break;
         } else
           break;
       } else
+        // We can't find the next basic block which is guaranteed to be
+        // executed.
+        break;
+
+      // Check whether the block is already visited.
+      if (ReachableTIs.count(BB->getTerminator()) > 0)
         break;
     }
   }
