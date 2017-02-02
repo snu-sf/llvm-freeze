@@ -607,6 +607,51 @@ bool LoopUnswitch::processCurrentLoop() {
     }
   }
 
+  // Given a terminator TI, if TI is in header, and all instructions
+  // between the beginning of the loop header and TI are guaranteed to
+  // execute, then no freeze is needed in unswitching it.
+  // ReachableTI is a set of terminator instructions which does not
+  // require freeze when being unswitched.
+  DenseSet<TerminatorInst *> ReachableTIs;
+  {
+    BasicBlock *BB = currentLoop->getHeader();
+    while (BB) {
+      TerminatorInst *BBTI = BB->getTerminator();
+      bool AlwaysReachableTI = true;
+
+      for (auto &I : *BB) {
+        Instruction *Inst = &I;
+        if (!isGuaranteedToTransferExecutionToSuccessor(Inst)) {
+          AlwaysReachableTI = false;
+        }
+      }
+
+      if (!AlwaysReachableTI)
+        break;
+
+      ReachableTIs.insert(BBTI);
+      if (BBTI->getNumSuccessors() == 1)
+        BB = BBTI->getSuccessor(0);
+      else if (BranchInst *BBBI = dyn_cast<BranchInst>(BBTI)) {
+        if (BBBI->getCondition() == ConstantInt::getTrue(Context))
+          BB = BBBI->getSuccessor(0);
+        else if (BBBI->getCondition() == ConstantInt::getFalse(Context))
+          BB = BBBI->getSuccessor(1);
+        else
+          break;
+      } else if (SwitchInst *BBSI = dyn_cast<SwitchInst>(BBTI)) {
+        if (ConstantInt *CI = dyn_cast<ConstantInt>(BBSI->getCondition())) {
+          SwitchInst::CaseIt CItr = BBSI->findCaseValue(CI);
+          BB = CItr.getCaseSuccessor();
+          if (ReachableTIs.count(BB->getTerminator()) > 0)
+            break;
+        } else
+          break;
+      } else
+        break;
+    }
+  }
+
   // Loop over all of the basic blocks in the loop.  If we find an interior
   // block that is branching on a loop-invariant condition, we can unswitch this
   // loop.
@@ -624,54 +669,7 @@ bool LoopUnswitch::processCurrentLoop() {
         !isGuaranteedToExecute(*TI, DT, currentLoop, &SafetyInfo))
       continue;
 
-    // Do we need to freeze condition of TI?
-    // If TI is in header, and all instructions between the beginning of 
-    // the loop header and TI are guaranteed to execute, then no freeze
-    // is needed.
-    bool NeedFreeze = true;
-    {
-      bool UnconditionallyGotoTI = true;
-      BasicBlock *BB = currentLoop->getHeader();
-      while (BB) {
-        TerminatorInst *BBTI = BB->getTerminator();
-        if (BBTI == TI)
-          // There's a unique path from header to TI
-          break;
-        else if (BBTI->getNumSuccessors() == 1)
-          BB = BBTI->getSuccessor(0);
-        else {
-          BB = nullptr;
-          UnconditionallyGotoTI = false;
-        }
-      }
-      if (UnconditionallyGotoTI) {
-        // Now we check whether all instructions from header to
-        // TI guarantees to transfer execution to successor.
-        NeedFreeze = false;
-        BB = currentLoop->getHeader();
-        while (BB) {
-          for (auto &I : *BB) {
-            Instruction *Inst = &I;
-            if (!isGuaranteedToTransferExecutionToSuccessor(Inst)) {
-              NeedFreeze = true;
-              break;
-            }
-          }
-          if (NeedFreeze)
-            break;
-
-          TerminatorInst *BBTI = BB->getTerminator();
-          if (BBTI == TI)
-            // There's a unique path from header to TI
-            break;
-          else {
-            assert (BBTI->getNumSuccessors() == 1 &&
-                    "Should have no more than 1 successors");
-            BB = BBTI->getSuccessor(0);
-          }
-        }
-      }
-    }
+    bool NeedFreeze = ReachableTIs.count(TI) > 0;
 
     if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
       // Some branches may be rendered unreachable because of previous
