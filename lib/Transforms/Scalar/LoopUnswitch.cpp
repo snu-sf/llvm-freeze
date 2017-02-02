@@ -678,7 +678,8 @@ bool LoopUnswitch::processCurrentLoop() {
         !isGuaranteedToExecute(*TI, DT, currentLoop, &SafetyInfo))
       continue;
 
-    bool NeedFreeze = ReachableTIs.count(TI) > 0;
+    // Is freeze needed when unswitching this branch?
+    bool NeedFreeze = ReachableTIs.count(TI) == 0;
 
     if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
       // Some branches may be rendered unreachable because of previous
