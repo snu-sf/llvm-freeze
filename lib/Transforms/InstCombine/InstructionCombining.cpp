@@ -2767,6 +2767,25 @@ Instruction *InstCombiner::visitLandingPadInst(LandingPadInst &LI) {
   return nullptr;
 }
 
+Instruction *InstCombiner::visitFreeze(FreezeInst &FI) {
+  Value *Op0 = FI.getOperand(0);
+
+  if (Value *V = SimplifyFreezeInst(Op0, DL, &TLI, &DT, &AC))
+    return replaceInstUsesWith(FI, V);
+
+  ICmpInst::Predicate Pred;
+  Value *Arg;
+  ConstantInt *CI;
+  if (match(Op0, m_ICmp(Pred, m_Value(Arg), m_ConstantInt(CI))) &&
+      isa<Argument>(Arg)) {
+    // freeze (icmp arg, const) -> icmp (freeze arg), const
+    Builder->CreateFreezeAtDef(Arg, FI.getParent()->getParent());
+    return replaceInstUsesWith(FI, Op0);
+  }
+
+  return nullptr;
+}
+
 /// Try to move the specified instruction from its current block into the
 /// beginning of DestBlock, which can only happen if it's safe to move the
 /// instruction past all of the instructions between it and the end of its
