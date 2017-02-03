@@ -444,6 +444,27 @@ static Value *FindLIVLoopCondition(Value *Cond, Loop *L, bool &Changed) {
   return FindLIVLoopCondition(Cond, L, Changed, Cache);
 }
 
+static BasicBlock *FindNextSuccessorBlock(TerminatorInst *TI) {
+  BasicBlock *BB = nullptr;
+  LLVMContext &Context = TI->getContext();
+
+  if (TI->getNumSuccessors() == 1)
+    BB = TI->getSuccessor(0);
+  else if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
+    if (BI->getCondition() == ConstantInt::getTrue(Context))
+      BB = BI->getSuccessor(0);
+    else if (BI->getCondition() == ConstantInt::getFalse(Context))
+      BB = BI->getSuccessor(1);
+  } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(SI->getCondition())) {
+      SwitchInst::CaseIt CItr = SI->findCaseValue(CI);
+      BB = CItr.getCaseSuccessor();
+    }
+  }
+
+  return BB;
+}
+
 bool LoopUnswitch::runOnLoop(Loop *L, LPPassManager &LPM_Ref) {
   if (skipLoop(L))
     return false;
@@ -625,6 +646,7 @@ bool LoopUnswitch::processCurrentLoop() {
         Instruction *Inst = &I;
         if (!isGuaranteedToTransferExecutionToSuccessor(Inst)) {
           AlwaysReachableTI = false;
+          break;
         }
       }
 
@@ -635,24 +657,8 @@ bool LoopUnswitch::processCurrentLoop() {
       ReachableTIs.insert(BBTI);
 
       // Now proceed to the next basic block, or stop here?
-      if (BBTI->getNumSuccessors() == 1)
-        BB = BBTI->getSuccessor(0);
-      else if (BranchInst *BBBI = dyn_cast<BranchInst>(BBTI)) {
-        if (BBBI->getCondition() == ConstantInt::getTrue(Context))
-          BB = BBBI->getSuccessor(0);
-        else if (BBBI->getCondition() == ConstantInt::getFalse(Context))
-          BB = BBBI->getSuccessor(1);
-        else
-          break;
-      } else if (SwitchInst *BBSI = dyn_cast<SwitchInst>(BBTI)) {
-        if (ConstantInt *CI = dyn_cast<ConstantInt>(BBSI->getCondition())) {
-          SwitchInst::CaseIt CItr = BBSI->findCaseValue(CI);
-          BB = CItr.getCaseSuccessor();
-        } else
-          break;
-      } else
-        // We can't find the next basic block which is guaranteed to be
-        // executed.
+      BB = FindNextSuccessorBlock(BBTI);
+      if (BB == nullptr)
         break;
 
       // Check whether the block is already visited.
@@ -975,7 +981,7 @@ bool LoopUnswitch::TryTrivialLoopUnswitch(bool &Changed) {
   SmallSet<BasicBlock*, 8> Visited;
 
   // If there exists an instruction I which is (1) between the beginning of
-  // the loop preheader and the branch to unswitch, and (1) not guaranteed to 
+  // the loop preheader and the branch to unswitch, and (2) not guaranteed to 
   // transfer execution to successor, then we need to freeze the condition.
   bool NeedFreeze = false;
 
@@ -1000,21 +1006,10 @@ bool LoopUnswitch::TryTrivialLoopUnswitch(bool &Changed) {
       }
     }
 
-    // FIXME: add check for constant foldable switch instructions.
-    if (BranchInst *BI = dyn_cast<BranchInst>(CurrentTerm)) {
-      if (BI->isUnconditional()) {
-        CurrentBB = BI->getSuccessor(0);
-      } else if (BI->getCondition() == ConstantInt::getTrue(Context)) {
-        CurrentBB = BI->getSuccessor(0);
-      } else if (BI->getCondition() == ConstantInt::getFalse(Context)) {
-        CurrentBB = BI->getSuccessor(1);
-      } else {
-        // Found a trivial condition candidate: non-foldable conditional branch.
-        break;
-      }
-    } else {
+    CurrentBB = FindNextSuccessorBlock(CurrentTerm);
+    if (CurrentBB == nullptr)
+      // Found a trivial condition candidate: non-foldable conditional branch.
       break;
-    }
 
     CurrentTerm = CurrentBB->getTerminator();
   }
