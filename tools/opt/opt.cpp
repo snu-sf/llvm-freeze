@@ -427,6 +427,8 @@ int main(int argc, char **argv) {
     }
   }
 
+  llvm::legacy::ModuleDumpOutFileName = InputFilename + ".passdump"; 
+  
   Triple ModuleTriple(M->getTargetTriple());
   std::string CPUStr, FeaturesStr;
   TargetMachine *Machine = nullptr;
