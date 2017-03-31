@@ -21,7 +21,7 @@ using namespace PatternMatch;
 Instruction *InstCombiner::visitFreeze(FreezeInst &FI) {
   Value *Op0 = FI.getOperand(0);
 
-  if (Value *V = SimplifyFreezeInst(Op0, DL, TLI, DT, AC))
+  if (Value *V = SimplifyFreezeInst(Op0, DL, &TLI, &DT, &AC))
     return replaceInstUsesWith(FI, V);
 
   if (FreezeInst *Op0_FI = dyn_cast<FreezeInst>(Op0))
