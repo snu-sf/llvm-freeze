@@ -24,6 +24,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManagers.h"
 #include "llvm/IR/OptBisect.h"
+#include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Timer.h"
@@ -629,7 +630,8 @@ char PrintCallGraphPass::ID = 0;
 
 Pass *CallGraphSCCPass::createPrinterPass(raw_ostream &O,
                                           const std::string &Banner) const {
-  return new PrintCallGraphPass(Banner, O);
+  return createPrintModulePass(O, Banner); 
+  //return new PrintCallGraphPass(Banner, O);
 }
 
 bool CallGraphSCCPass::skipSCC(CallGraphSCC &SCC) const {

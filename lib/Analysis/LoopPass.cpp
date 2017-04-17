@@ -31,26 +31,31 @@ namespace {
 /// PrintLoopPass - Print a Function corresponding to a Loop.
 ///
 class PrintLoopPassWrapper : public LoopPass {
-  PrintLoopPass P;
+  //PrintLoopPass P;
+  PrintModulePass P;
 
 public:
   static char ID;
   PrintLoopPassWrapper() : LoopPass(ID) {}
   PrintLoopPassWrapper(raw_ostream &OS, const std::string &Banner)
-      : LoopPass(ID), P(OS, Banner) {}
+      : LoopPass(ID), /*P(OS, Banner)*/P(OS, Banner, false) {}
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesAll();
   }
 
   bool runOnLoop(Loop *L, LPPassManager &) override {
-    auto BBI = find_if(L->blocks().begin(), L->blocks().end(),
+    ModuleAnalysisManager DummyMAM;
+    P.run(*(L->getHeader()->getParent()->getParent()), DummyMAM);  
+    /* 
+	auto BBI = find_if(L->blocks().begin(), L->blocks().end(),
                        [](BasicBlock *BB) { return BB; });
     if (BBI != L->blocks().end() &&
         isFunctionInPrintList((*BBI)->getParent()->getName())) {
       AnalysisManager<Loop> DummyLAM;
       P.run(*L, DummyLAM);
     }
+	*/
     return false;
   }
 };
