@@ -3025,7 +3025,7 @@ LLVMValueRef LLVMBuildInsertValue(LLVMBuilderRef, LLVMValueRef AggVal,
                                   LLVMValueRef EltVal, unsigned Index,
                                   const char *Name);
 LLVMValueRef LLVMBuildFreeze(LLVMBuilderRef, LLVMValueRef Val,
-                                   const char *Name);
+                             const char *Name);
 
 LLVMValueRef LLVMBuildIsNull(LLVMBuilderRef, LLVMValueRef Val,
                              const char *Name);

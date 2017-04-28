@@ -1715,9 +1715,6 @@ public:
   /// the new value
   Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "",
                            bool replaceAllUses = true) {
-    if (FreezeInst::isGuaranteedNotToBeUndef(Arg))
-      return Arg;
-
     assert (!isa<Constant>(Arg) && "Constant has no def");
 
     if (Instruction *I = dyn_cast<Instruction>(Arg)) {

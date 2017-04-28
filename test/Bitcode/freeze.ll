@@ -1,11 +1,10 @@
-; RUN: llvm-as < %s | llvm-dis | FileCheck %s
+; RUN: llvm-as < %s | llvm-dis > %t.orig
+; RUN: llvm-as < %s | llvm-c-test --echo > %t.echo
+; RUN: diff -w %t.orig %t.echo
 
-define i32 @f(i32 %x) {
-  %y = freeze i32 %x
-  ret i32 %y
+define i32 @f(i32 %arg) {
+  %1 = freeze i32 %arg
+  %2 = freeze i32 10
+  %3 = freeze i32 %1
+  ret i32 %1
 }
-
-; CHECK:      define i32 @f(i32 %x) {
-; CHECK-NEXT:   %y = freeze i32 %x
-; CHECK-NEXT:   ret i32 %y
-; CHECK-NEXT: }
