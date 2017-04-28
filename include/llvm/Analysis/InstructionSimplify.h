@@ -291,7 +291,7 @@ namespace llvm {
                       AssumptionCache *AC = nullptr,
                       const Instruction *CxtI = nullptr);
 
-  /// SimplifyFreezeInst - Given operands for a Freeze, see if we can
+  /// SimplifyFreezeInst - Given an operand for a Freeze, see if we can
   /// fold the result.  If not, this returns null.
   Value *SimplifyFreezeInst(Value *Op, const DataLayout &DL,
                          const TargetLibraryInfo *TLI = nullptr,

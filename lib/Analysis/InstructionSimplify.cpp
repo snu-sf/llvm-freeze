@@ -4392,20 +4392,20 @@ Value *llvm::SimplifyCall(Value *V, ArrayRef<Value *> Args,
                         Query(DL, TLI, DT, AC, CxtI), RecursionLimit);
 }
 
-/// Given operands for a Freeze, see if we can fold the result.
+/// Given an operand for a Freeze, see if we can fold the result.
 static Value *SimplifyFreezeInst(Value *Op0) {
-  // Currently we don't have constantexpr freeze, so just check
-  // whether it is a ConstantInt.
-  if (isa<ConstantInt>(Op0))
+  // Use a utility function defined in ValueTracking.
+  if (llvm::isGuaranteedNotToBeUndefOrPoison(Op0))
     return Op0;
+  // We have room for improvement.
   return nullptr;
 }
 
 Value *llvm::SimplifyFreezeInst(Value *Op0,
-                              const DataLayout &DL,
-                              const TargetLibraryInfo *TLI,
-                              const DominatorTree *DT, AssumptionCache *AC,
-                              const Instruction *CxtI) {
+                                const DataLayout &DL,
+                                const TargetLibraryInfo *TLI,
+                                const DominatorTree *DT, AssumptionCache *AC,
+                                const Instruction *CxtI) {
   return ::SimplifyFreezeInst(Op0);
 }
 
@@ -4555,8 +4555,7 @@ Value *llvm::SimplifyInstruction(Instruction *I, const DataLayout &DL,
                               DL, TLI, DT, AC, I);
     break;
   case Instruction::Freeze:
-    Result = 
-        SimplifyFreezeInst(I->getOperand(0), DL, TLI, DT, AC, I);
+    Result = SimplifyFreezeInst(I->getOperand(0), DL, TLI, DT, AC, I);
     break;
   }
 
