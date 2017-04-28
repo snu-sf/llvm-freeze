@@ -522,6 +522,7 @@ protected:
   bool selectCall(const User *Call);
   bool selectIntrinsicCall(const IntrinsicInst *II);
   bool selectBitCast(const User *I);
+  bool selectFreeze(const User *I);
   bool selectCast(const User *I, unsigned Opcode);
   bool selectExtractValue(const User *I);
   bool selectInsertValue(const User *I);

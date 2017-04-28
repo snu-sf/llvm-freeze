@@ -1264,7 +1264,7 @@ SDValue DAGTypeLegalizer::PromoteIntOp_ZERO_EXTEND(SDNode *N) {
 
 SDValue DAGTypeLegalizer::PromoteIntOp_FREEZE(SDNode *N) {
   SDValue Op = GetPromotedInteger(N->getOperand(0));
-  return DAG.getNode(ISD::FREEZE, SDLoc(N), N->getValueType(0), Op);
+  return DAG.getNode(ISD::FREEZE, SDLoc(N), Op.getValueType(), Op);
 }
 
 

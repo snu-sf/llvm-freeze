@@ -2232,10 +2232,42 @@ void SelectionDAGISel::Select_FREEZE(SDNode *N) {
   EVT Ty = N->getValueType(0);
   SDLoc dl(N);
 
+  // Select FREEZE to CopyToReg + CopyFromReg.
+  // This blocks propagation of UNDEF while translating SelDag into
+  // MachineInstr.
+  // LLVM translates an UNDEF node into multiple IMPLICIT_DEF
+  // instructions (in MachineInstr) if the UNDEF has multiple uses.
+  // For example,
+  // 
+  // %y1 = UNDEF
+  // %t1 = mul i64 %y1, %y1
+  //
+  // It is translated into MachineInstr code
+  //
+  // %vreg2 = IMPLICIT_DEF
+  // %vreg3 = IMPLICIT_DEF
+  // %vreg1 = IMUL32rr %vreg2, %vreg3
+  //
+  // However, with freeze,
+  //
+  // %y1 = freeze i64 UNDEF
+  // %t1 = mul i64 %y1, %y1
+  //
+  // each read of %y1 must yield same value, so it must be translated into : 
+  // 
+  // %vreg2 = IMPLICIT_DEF
+  // %vreg1 = IMUL32rr %vreg2, %vreg2
+  //
+  // Selecting FREEZE into CopyToReg + CopyFromReg helps this.
+  //
+  // We don't have FREEZE pseudo-instruction in MachineInstr-level now.
+  // If FREEZE instruction is added later, the code below must be
+  // changed as well.
+
   const TargetRegisterClass *RC = TLI->getRegClassFor(Ty.getSimpleVT());
   // Create a new virtual register.
   unsigned NewVirtReg = RegInfo->createVirtualRegister(RC);
-  // Create CopyToReg node ('copy 0 into NewVirtReg')
+  // Create CopyToReg node ('copy val into NewVirtReg')
   SDValue CTRVal = CurDAG->getCopyToReg(CurDAG->getEntryNode(), dl,
                                         NewVirtReg, Op);
   // Create CopyFromReg node ('get value from NewVirtReg')
