@@ -1715,37 +1715,31 @@ public:
   /// the new value
   Value *CreateFreezeAtDef(Value *Arg, Function *F, const Twine &Name = "",
                            bool replaceAllUses = true) {
-    assert (!isa<Constant>(Arg) && "Constant has no def");
+    FreezeInst *FI = nullptr;
 
     if (Instruction *I = dyn_cast<Instruction>(Arg)) {
-      FreezeInst *FI = new FreezeInst(I, Name);
+      FI = new FreezeInst(I, Name);
       BasicBlock *BB = I->getParent();
+
       if (isa<PHINode>(I)) {
         BB->getInstList().insert(BB->getFirstInsertionPt(), FI);
-      } else if (isa<InvokeInst>(I)) {
-        // invoke is a terminator, so we have to put freeze into
-        // the beginning of its branch.
-        assert (!isa<InvokeInst>(I) && "Cannot put Freeze at def of terminator.");
+      } else if (isa<TerminatorInst>(I)) {
+        llvm_unreachable("unhandled value to freeze");
       } else {
         FI->insertAfter(I);
       }
-      if (replaceAllUses) {
-        I->replaceAllUsesWith(FI);
-        FI->replaceUsesOfWith(FI, I);
-      }
-      return FI;
-    } else {
-      assert(isa<Argument>(Arg) && "Cannot freeze the value");
+    } else if (Argument *A = dyn_cast<Argument>(Arg)) {
       BasicBlock &Entry = F->getEntryBlock();
-      FreezeInst *FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
-      if(replaceAllUses) {
-        Arg->replaceAllUsesWith(FI);
-        FI->replaceUsesOfWith(FI, Arg);
-      }
-      return FI;
+      FI = new FreezeInst(Arg, Name, &*Entry.getFirstInsertionPt());
+    } else {
+      llvm_unreachable("unhandled value to freeze");
     }
 
-    return nullptr;
+    if (replaceAllUses) {
+      Arg->replaceAllUsesWith(FI);
+      FI->replaceUsesOfWith(FI, Arg);
+    }
+    return FI;
   }
 
   /// \brief Return the i64 difference between two pointer values, dividing out

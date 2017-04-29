@@ -240,13 +240,13 @@ namespace {
     bool TryTrivialLoopUnswitch(bool &Changed);
 
     bool UnswitchIfProfitable(Value *LoopCond, Constant *Val,
-                              TerminatorInst *TI = nullptr,
-                              bool NeedFreeze = true);
+                              bool NeedFreeze = true,
+                              TerminatorInst *TI = nullptr);
     void UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
-                                  BasicBlock *ExitBlock, TerminatorInst *TI,
-                                  bool NeedFreeze);
+                                  BasicBlock *ExitBlock, bool NeedFreeze,
+                                  TerminatorInst *TI);
     void UnswitchNontrivialCondition(Value *LIC, Constant *OnVal, Loop *L,
-                                     TerminatorInst *TI, bool NeedFreeze);
+                                     bool NeedFreeze, TerminatorInst *TI);
 
     void RewriteLoopBodyWithConditionConstant(Loop *L, Value *LIC,
                                               Constant *Val, bool isEqual);
@@ -598,8 +598,7 @@ bool LoopUnswitch::processCurrentLoop() {
     Value *LoopCond =
         FindLIVLoopCondition(Guard->getOperand(0), currentLoop, Changed);
     if (LoopCond &&
-        UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(Context),
-                             nullptr, true)) {
+        UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(Context), true)) {
       // NB! Unswitching (if successful) could have erased some of the
       // instructions in Guards leaving dangling pointers there.  This is fine
       // because we're returning now, and won't look at Guards again.
@@ -692,8 +691,8 @@ bool LoopUnswitch::processCurrentLoop() {
         // Determine whether to freeze condition variable or not.
         // This branch (BI) must be guaranteed to execute, e.g. 
         if (LoopCond &&
-            UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(Context), TI,
-                                 NeedFreeze)) {
+            UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(Context),
+                                 true, TI)) {
           ++NumBranches;
           return true;
         }
@@ -723,7 +722,7 @@ bool LoopUnswitch::processCurrentLoop() {
         if (!UnswitchVal)
           continue;
 
-        if (UnswitchIfProfitable(LoopCond, UnswitchVal, nullptr, NeedFreeze)) {
+        if (UnswitchIfProfitable(LoopCond, UnswitchVal, true)) {
           ++NumSwitches;
           return true;
         }
@@ -738,7 +737,7 @@ bool LoopUnswitch::processCurrentLoop() {
                                                currentLoop, Changed);
         if (LoopCond && UnswitchIfProfitable(LoopCond,
                                              ConstantInt::getTrue(Context),
-                                             nullptr, true)) {
+                                             true)) {
           ++NumSelects;
           return true;
         }
@@ -801,8 +800,8 @@ static BasicBlock *isTrivialLoopExitBlock(Loop *L, BasicBlock *BB) {
 /// simplify the loop.  If we decide that this is profitable,
 /// unswitch the loop, reprocess the pieces, then return true.
 bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val,
-                                        TerminatorInst *TI,
-                                        bool NeedFreeze) {
+                                        bool NeedFreeze,
+                                        TerminatorInst *TI) {
   // Check to see if it would be profitable to unswitch current loop.
   if (!BranchesInfo.CostAllowsUnswitching()) {
     DEBUG(dbgs() << "NOT unswitching loop %"
@@ -813,7 +812,7 @@ bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val,
     return false;
   }
 
-  UnswitchNontrivialCondition(LoopCond, Val, currentLoop, TI, NeedFreeze);
+  UnswitchNontrivialCondition(LoopCond, Val, currentLoop, NeedFreeze, TI);
   return true;
 }
 
@@ -869,6 +868,27 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
   SplitCriticalEdge(BI, 1, Options);
 }
 
+static void FreezeBranchCondition(Value *&LIC, BasicBlock *LoopPreheader) {
+  if (isGuaranteedNotToBeUndefOrPoison(LIC))
+    // It is unnecessary to freeze the condition.
+    return;
+
+  IRBuilder<> Builder(LoopPreheader);
+  if (isa<TerminatorInst>(LIC)) {
+    // Terminator with a return value.
+    // Create a freeze instruction, and put it just before the old
+    // branch instruction (in loop preheader)
+    assert (isa<InvokeInst>(LIC) && "Unknown terminator instruction");
+    FreezeInst *FI = new FreezeInst(LIC, LIC->getName() + ".fr");
+    FI->insertBefore(LoopPreheader->getTerminator());
+    LIC = FI;
+  } else {
+    // Put freeze at def of LIC, and replace all uses with the new freeze
+    LIC = Builder.CreateFreezeAtDef(LIC, LoopPreheader->getParent(),
+                                    LIC->getName() + ".fr");
+  }
+}
+
 /// Given a loop that has a trivial unswitchable condition in it (a cond branch
 /// from its header block to its latch block, where the path through the loop
 /// that doesn't execute its body has no side-effects), unswitch it. This
@@ -876,8 +896,8 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
 /// outside of the loop and updating loop info.
 void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
                                             BasicBlock *ExitBlock,
-                                            TerminatorInst *TI,
-                                            bool NeedFreeze) {
+                                            bool NeedFreeze,
+                                            TerminatorInst *TI) {
   DEBUG(dbgs() << "loop-unswitch: Trivial-Unswitch loop %"
                << loopHeader->getName() << " [" << L->getBlocks().size()
                << " blocks] in Function "
@@ -900,20 +920,9 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
   assert(!L->contains(ExitBlock) && "Exit block is in the loop?");
   BasicBlock *NewExit = SplitBlock(ExitBlock, &ExitBlock->front(), DT, LI);
 
-  // Freeze
-  if (NeedFreeze) {
-    IRBuilder<> Builder(NewPH);
-    if (isa<TerminatorInst>(Cond)) {
-      // Terminator with a return value.
-      // InvokeInst is the only case now (LLVM 3.9)
-      FreezeInst *FI = new FreezeInst(Cond, Cond->getName() + ".fr");
-      FI->insertBefore(loopPreheader->getTerminator());
-      Cond = FI;
-    } else {
-      Cond = Builder.CreateFreezeAtDef(Cond, ExitBlock->getParent(),
-                                       Cond->getName() + ".fr");
-    }
-  }
+  // If necessary, freeze the branch condition so it does not introduce UB.
+  if (NeedFreeze)
+    FreezeBranchCondition(Cond, loopPreheader);
 
   // Okay, now we have a position to branch from and a position to branch to,
   // insert the new conditional branch.
@@ -1040,7 +1049,7 @@ bool LoopUnswitch::TryTrivialLoopUnswitch(bool &Changed) {
       return false;   // Can't handle this.
 
     UnswitchTrivialCondition(currentLoop, LoopCond, CondVal, LoopExitBB,
-                             CurrentTerm, NeedFreeze);
+                             true, CurrentTerm);
     ++NumBranches;
     return true;
   } else if (SwitchInst *SI = dyn_cast<SwitchInst>(CurrentTerm)) {
@@ -1083,7 +1092,7 @@ bool LoopUnswitch::TryTrivialLoopUnswitch(bool &Changed) {
       return false;   // Can't handle this.
 
     UnswitchTrivialCondition(currentLoop, LoopCond, CondVal, LoopExitBB,
-                             nullptr, NeedFreeze);
+                             true, nullptr);
     ++NumSwitches;
     return true;
   }
@@ -1111,8 +1120,8 @@ void LoopUnswitch::SplitExitEdges(Loop *L,
 /// Split it into loop versions and test the condition outside of either loop.
 /// Return the loops created as Out1/Out2.
 void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
-                                               Loop *L, TerminatorInst *TI,
-                                               bool NeedFreeze) {
+                                               Loop *L, bool NeedFreeze,
+                                               TerminatorInst *TI) {
   Function *F = loopHeader->getParent();
   DEBUG(dbgs() << "loop-unswitch: Unswitching loop %"
         << loopHeader->getName() << " [" << L->getBlocks().size()
@@ -1232,21 +1241,9 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
 
   // Emit the new branch that selects between the two versions of this loop.
 
-  if (NeedFreeze) {
-    // Freeze the condition
-    IRBuilder<> Builder(loopPreheader);
-    if (isa<TerminatorInst>(LIC)) {
-      // Terminator with a return value.
-      // InvokeInst is the only case now (LLVM 3.9)
-      FreezeInst *FI = new FreezeInst(LIC, LIC->getName() + ".fr");
-      FI->insertBefore(OldBR);
-      LIC = FI;
-    } else {
-      // Put freeze at def of LIC, and replace all uses with new freeze
-      LIC = Builder.CreateFreezeAtDef(LIC, loopPreheader->getParent(),
-                                      LIC->getName() + ".fr");
-    }
-  }
+  // If necessary, freeze the branch condition so it does not introduce UB.
+  if (NeedFreeze)
+    FreezeBranchCondition(LIC, loopPreheader);
 
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR,
                                  TI);
