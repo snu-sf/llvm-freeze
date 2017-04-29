@@ -1,4 +1,5 @@
-; 6 test cases which must introduce a freeze instruction after loop unswitch
+; 4 test cases which must introduce a freeze instruction after loop unswitch
+; , and 2 test cases which must not introduce a freeze instruction
 ; RUN: opt < %s -loop-simplify -loop-rotate -loop-unswitch -S | FileCheck %s
 
 @x = common global i32 0, align 4
@@ -259,8 +260,7 @@ entry:
   br label %for.cond
 
 ; CHECK: %cmp1 = icmp eq i32 %b, 0
-; CHECK-NEXT: %cmp1.fr = freeze i1 %cmp1
-; CHECK-NEXT: br i1 %cmp1.fr, label %for.body.lr.ph.split.us, label %for.body.lr.ph.for.body.lr.ph.split_crit_edge
+; CHECK-NEXT: br i1 %cmp1, label %for.body.lr.ph.split.us, label %for.body.lr.ph.for.body.lr.ph.split_crit_edge
 
 for.cond:                                         ; preds = %for.inc, %entry
   %sum.0 = phi i32 [ 0, %entry ], [ %sum.1, %for.inc ]
@@ -309,8 +309,7 @@ entry:
   br label %for.cond
 
 ; CHECK: %cmp1 = icmp eq i32 %b, 0
-; CHECK-NEXT: %cmp1.fr = freeze i1 %cmp1
-; CHECK-NEXT: br i1 %cmp1.fr, label %for.body.lr.ph.split.us, label %for.body.lr.ph.for.body.lr.ph.split_crit_edge
+; CHECK-NEXT: br i1 %cmp1, label %for.body.lr.ph.split.us, label %for.body.lr.ph.for.body.lr.ph.split_crit_edge
 
 for.cond:                                         ; preds = %for.inc, %entry
   %sum.0 = phi i32 [ 0, %entry ], [ %sum.1, %for.inc ]
