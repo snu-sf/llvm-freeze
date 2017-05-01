@@ -223,16 +223,11 @@ Instruction *InstCombiner::foldSelectOpOp(SelectInst &SI, Instruction *TI,
       Cond = Builder->CreateFreeze(Cond, 
                                    Cond->getName() + ".fr");
   }
-  Value *NewSI = Builder->CreateSelect(Cond, OtherOpT,
-                                       OtherOpF, SI.getName()+".v");
-
-  if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TI)) {
-    if (MatchIsOpZero)
-      return BinaryOperator::Create(BO->getOpcode(), MatchOp, NewSI);
-    else
-      return BinaryOperator::Create(BO->getOpcode(), NewSI, MatchOp);
-  }
-  llvm_unreachable("Shouldn't get here");
+  Value *NewSI = Builder->CreateSelect(Cond, OtherOpT, OtherOpF,
+                                       SI.getName() + ".v", &SI);
+  Value *Op0 = MatchIsOpZero ? MatchOp : NewSI;
+  Value *Op1 = MatchIsOpZero ? NewSI : MatchOp;
+  return BinaryOperator::Create(BO->getOpcode(), Op0, Op1);
 }
 
 static bool isSelect01(Constant *C1, Constant *C2) {
